@@ -127,26 +127,25 @@ Unique `(obligation_id, user_id)`.
 
 ### ObligationEvent
 
-One row per workflow step — append-only audit trail.
+One row per workflow step — append-only audit trail. Grouped by `obligation_id` (one obligation row per cycle; no `due_by` duplicate needed on events).
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `obligation_id` | FK | |
 | `status` | enum | `open`, `in_progress`, `done`, `cancelled` |
 | `status_by_id` | FK → users | Who triggered this step |
-| `due_by` | date/datetime | Snapshot — groups events into a cycle |
+| `note` | text nullable | Step note — open context, done comment, cancel reason; enforced on Done when `complete_note_required` |
 | `inserted_at` | utc_datetime | |
 
-Event rows are never edited or deleted. Corrections use new rows or audit log.
+Event rows are never edited or deleted. Note edits while active → `ObligationAuditLog`.
 
 ### ObligationEventDocument
 
-Multiple per event — incremental notes and file uploads.
+Multiple per event — incremental file uploads during open / in_progress.
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `obligation_event_id` | FK | |
-| `note` | text nullable | |
 | `documents` | attachment ref | File storage TBD (e.g. filesystem, S3) |
 | `document_slot` | string nullable | Matches `complete_documents` name on Done validation |
 | `user_id` | FK | Who uploaded/wrote |
@@ -164,7 +163,7 @@ Field-level before/after for corrections.
 | Field | Type | Notes |
 |-------|------|-------|
 | `obligation_id` | FK nullable | |
-| `obligation_event_document_id` | FK nullable | For note edits |
+| `obligation_event_id` | FK nullable | For event note edits |
 | `field` | string | e.g. `title`, `due_by`, `note`, `primary_assignee` |
 | `old_value` | text | |
 | `new_value` | text | |
@@ -186,7 +185,7 @@ Field-level before/after for corrections.
 ### Create Obligation
 
 1. Manager fills: title, type, primary assignee, optional collaborators, due_by
-2. Optional "Notes" on form → saved as `ObligationEventDocument` on Open event (serves as description/context)
+2. Optional "Notes" on form → saved as `note` on Open event (serves as description/context)
 3. System creates `Obligation` (`status: active`, new `series_id`)
 4. System creates `ObligationEvent` (`status: open`, `due_by` snapshot)
 
@@ -195,7 +194,8 @@ Field-level before/after for corrections.
 While cycle is active (not yet `done`):
 
 - Transition to `in_progress` (one event per cycle)
-- Add notes/documents incrementally on the `open` or `in_progress` event (multiple `ObligationEventDocument` rows over time)
+- Add documents incrementally on the `open` or `in_progress` event (multiple `ObligationEventDocument` rows over time)
+- Step-level notes live on `ObligationEvent.note` (open context, done comment, cancel reason)
 
 Note and document requirements on type are **not** enforced until Done — only on Done.
 
@@ -203,9 +203,9 @@ Note and document requirements on type are **not** enforced until Done — only 
 
 1. User (primary or manager) triggers Done
 2. Enforce `ObligationType` rules:
-   - `complete_note_required` → note present on Done event/document
+   - `complete_note_required` → `note` present on Done event
    - `complete_documents` → one non-voided file per named slot
-3. Create `ObligationEvent` (`status: done`) + `ObligationEventDocument`
+3. Create `ObligationEvent` (`status: done`, `note`) + any Done document uploads
 4. If `recurring_interval` is not `none` **and** `series_ended_at IS NULL`:
    - Prompt: "Next due date?"
    - Pre-fill from interval formula for fixed intervals (`weekly` … `annual`); blank picker for `custom`

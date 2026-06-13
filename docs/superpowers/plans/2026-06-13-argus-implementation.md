@@ -523,8 +523,7 @@ test "create_obligation/3 creates obligation, open event, and optional open note
   events = Obligations.list_events(obligation)
   assert hd(events).status == "open"
 
-  docs = Obligations.list_documents(hd(events))
-  assert hd(docs).note == "Submit by 15th"
+  assert hd(events).note == "Submit by 15th"
 end
 ```
 
@@ -539,8 +538,7 @@ Use `due_by` as `:date`. Index `(entity_id, status)`, `(series_id)`, `(primary_a
 1. Generate `series_id` with `Ecto.UUID.generate()`
 2. Insert obligation
 3. Insert collaborators if provided
-4. Insert open event with `due_by` snapshot
-5. Insert optional `ObligationEventDocument` on open event
+4. Insert open event with optional `note` (from `open_note` attr)
 
 - [ ] **Step 4: Run tests — PASS**
 
@@ -594,7 +592,7 @@ defmodule Argus.Obligations.Completion do
     end
   end
 
-  defp validate_note(%{complete_note_required: true}, %{note: note}) when note in [nil, ""],
+  defp validate_note(%{complete_note_required: true}, note) when note in [nil, ""],
     do: {:error, :note_required}
 
   defp validate_note(_, _), do: :ok
