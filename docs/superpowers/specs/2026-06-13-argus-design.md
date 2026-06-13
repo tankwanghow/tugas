@@ -114,7 +114,15 @@ One row **per cycle** (not a standing series with rolling `due_by`).
 | `primary_assignee_id` | FK → users | Required |
 | `due_by` | date/datetime | Current cycle due date |
 | `status` | enum | `active`, `cancelled` |
+| `completed_at` | utc_datetime nullable | Set when the Done event is recorded — terminal "closed" marker (the `Obligation.status` stays `active`; "done-ness" is this timestamp, not a status value) |
 | `series_ended_at` | utc_datetime nullable | Set by "End series" — blocks future spawn |
+
+A cycle is **live** while `completed_at IS NULL AND status = "active"` — this is the set that
+appears on dashboards and can be worked, completed, edited, or cancelled. `completed_at` and
+`cancelled` are the two terminal states; both lock the cycle (see [Corrections Model](#corrections-model)).
+
+**One live cycle per series** is enforced by a partial unique index on `series_id` where the
+cycle is live — preventing concurrent Done calls from spawning duplicate next cycles.
 
 ### obligation_collaborators
 
@@ -198,17 +206,24 @@ Note and document requirements on type are **not** enforced until Done — only 
 
 ### Done
 
-1. User (primary or manager) triggers Done
+1. User (primary or manager) triggers Done — only allowed while the cycle is **live**
+   (`completed_at IS NULL AND status = "active"`); a guarded transition sets `completed_at`,
+   so a second concurrent Done finds no live row and is rejected (idempotent)
 2. Enforce `ObligationType` rules:
    - `complete_note_required` → `note` present on Done event
    - `complete_documents` → one non-voided file per named slot
-3. Create `ObligationEvent` (`status: done`, `note`) + any Done document uploads
+   - **Recurring & series not ended** (`recurring_interval ≠ none AND series_ended_at IS NULL`)
+     → `next_due_by` is **required**. Done is rejected without it. This is what guarantees a
+     recurring series always has a successor cycle and never lands in a "no live cycle, not
+     ended" limbo. To stop recurrence without naming a next date, use **End series** instead.
+3. In one transaction: set `Obligation.completed_at`, create `ObligationEvent`
+   (`status: done`, `note`) + any Done document uploads
 4. If `recurring_interval` is not `none` **and** `series_ended_at IS NULL`:
-   - Prompt: "Next due date?"
-   - Pre-fill from interval formula for fixed intervals (`weekly` … `annual`); blank picker for `custom`
+   - Prompt: "Next due date?" — required (see step 2)
+   - Pre-fill from interval formula for fixed intervals (`weekly` … `annual`); blank picker for `custom` (user must pick)
    - Create **new** `Obligation` (same `series_id`, type, title, assignees, collaborators, new `due_by`)
    - Create `ObligationEvent` (`status: open`) on new obligation
-5. Completed obligation remains unchanged (historical record)
+5. Completed obligation row is closed via `completed_at` and otherwise unchanged (historical record)
 
 ### Cancel
 
@@ -270,11 +285,16 @@ Split view with role-aware default tab. **No separate notification system** — 
 | **My work** | Obligations where user is primary or collaborator; active only; sorted by due date | member |
 | **Team overview** | All active upcoming/overdue obligations in entity | manager, admin |
 
-Filter: `Obligation.status = active`.
+Filter: **live cycles only** — `Obligation.status = active AND completed_at IS NULL`. (Filtering
+on `status` alone is insufficient: completed cycles keep `status = active`, so they must be
+excluded via `completed_at IS NULL` or they linger on dashboards forever.)
 
 ### Urgency badges (from `reminder_offsets`)
 
-Computed at render time from `due_by` vs today — no background jobs, no notification records.
+Computed at render time from `due_by` vs **today in the entity's timezone** — no background jobs,
+no notification records. "Today" is `DateTime.now(entity.timezone)` reduced to a date, **not**
+`Date.utc_today()`; otherwise overdue/due-soon flip at the wrong moment near midnight for
+non-UTC tenants (e.g. Malaysia, UTC+8).
 
 | Urgency | Rule |
 |---------|------|

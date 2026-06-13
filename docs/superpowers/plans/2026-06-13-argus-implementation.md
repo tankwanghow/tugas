@@ -276,7 +276,7 @@ end
 Key functions:
 - `create_entity/2` — insert entity + admin membership
 - `list_user_entities/1`
-- `get_entity_by_slug!/1`
+- `get_entity_by_slug_for_user!/2` — slug lookup scoped to the user's memberships (used by `SetActiveEntity`)
 - `get_membership!/2`
 - `invite_member/4` — manager/admin only (authorization added later)
 - `accept_invitation/2`
@@ -376,12 +376,12 @@ end
 
 - [ ] **Step 2: Implement `can?/3` and `can?/4`**
 
-Actions: `:manage_entity`, `:manage_types`, `:create_obligation`, `:edit_obligation`, `:mark_done`, `:cancel_obligation`, `:end_series`, `:void_document`, `:add_progress`
+Actions: `:manage_entity`, `:manage_types`, `:create_obligation`, `:edit_obligation`, `:mark_done`, `:cancel_obligation`, `:end_series`, `:void_document`, `:start_progress`
 
 Rules per spec:
 - admin → all
 - manager → create, edit, mark_done (any), cancel, end_series
-- member → add_progress if primary or collaborator; mark_done if primary only
+- member → start_progress if primary or collaborator; mark_done if primary only
 
 - [ ] **Step 3: Run tests — PASS**
 
@@ -467,7 +467,20 @@ Implement `shift_month/2` properly (handle Jan 31 + 1 month → Feb 28).
 
 Fields per spec. `entity_id` nullable for system presets.
 
-- [ ] **Step 4: Type changeset validates interval in `@intervals`**
+- [ ] **Step 4: Type changeset validates interval in `@intervals` and the CSV-in-string fields**
+
+`reminder_offsets` and `complete_documents` are stored as comma-delimited strings but are parsed
+on the **dashboard render path** — a malformed value would raise and take down the whole
+entity's dashboard. Validate and normalize them at **write time** so render-time parsing can
+never fail:
+
+- `reminder_offsets` — each comma-separated token must parse to a **non-negative integer**;
+  reject otherwise with a changeset error. Normalize: trim, drop blanks, dedup, sort; store
+  canonical `"30,7,1"`. Add a test for a bad value (`"7, ,abc"`) producing an invalid changeset.
+- `complete_documents` — trim each slot name, drop blanks, dedup; reject duplicate or empty slot
+  names. Store canonical form.
+
+Add a failing changeset test for each before implementing.
 
 - [ ] **Step 5: Run tests — PASS**
 
@@ -483,6 +496,16 @@ Fields per spec. `entity_id` nullable for system presets.
 - Create: `lib/argus/obligations/event.ex`
 - Create: `lib/argus/obligations.ex` (partial — create only)
 - Create: `test/argus/obligations_test.exs`
+- Create: `test/support/fixtures/obligations_fixtures.ex`
+
+> **Fixture caveat (carries through Tasks 9–12, 14):** `obligation_fixture/*` and
+> `recurring_obligation_fixture/*` must build their `ObligationType` with
+> `complete_note_required: false` and `complete_documents: ""` (no required slots) **by default**.
+> Otherwise the Task 9 `complete/4` tests for `next_due_required`, idempotency (`not_live`), and
+> plain spawn would fail on the note/document validations *before* reaching the behavior under
+> test. Tests that specifically exercise completion rules should opt **in** to those requirements
+> via fixture options (e.g. `type_fixture(entity, complete_note_required: true)`), not rely on the
+> default.
 
 - [ ] **Step 1: Write failing create test**
 
@@ -515,7 +538,20 @@ end
 
 Tables: `obligations`, `obligation_collaborators`, `obligation_events`.
 
+`obligations` columns include `completed_at :utc_datetime` (nullable) and `series_ended_at :utc_datetime` (nullable).
+
 Use `due_by` as `:date`. Index `(entity_id, status)`, `(series_id)`, `(primary_assignee_id)`.
+
+**Enforce one live cycle per series** with a partial unique index (a live cycle is
+`status = 'active' AND completed_at IS NULL`):
+
+```elixir
+create unique_index(:obligations, [:series_id],
+  where: "status = 'active' AND completed_at IS NULL",
+  name: :obligations_one_live_cycle_per_series)
+```
+
+This is what makes concurrent Done calls safe — the second spawn of the same series hits the index and fails.
 
 - [ ] **Step 3: Implement `create_obligation/3` in transaction**
 
@@ -546,22 +582,40 @@ test "start_progress/3 creates in_progress event" do
   assert event.status == "in_progress"
 end
 
-test "complete/4 marks done and spawns next obligation when recurring" do
+test "complete/4 marks done, stamps completed_at, and spawns next when recurring" do
   {primary, entity, obligation} = recurring_obligation_fixture(interval: "monthly")
   {:ok, done_obligation, new_obligation} =
     Obligations.complete(entity, primary, obligation, %{next_due_by: ~D[2026-02-15]})
 
+  assert done_obligation.completed_at                     # terminal marker set
   assert done_event = Obligations.latest_event(done_obligation)
   assert done_event.status == "done"
   assert new_obligation.due_by == ~D[2026-02-15]
   assert new_obligation.series_id == obligation.series_id
 end
 
-test "complete does not spawn when series ended" do
-  {manager, entity, obligation} = recurring_obligation_fixture()
-  {:ok, _} = Obligations.end_series(entity, manager, obligation)
-  {:ok, done_obligation, nil} = Obligations.complete(entity, manager, obligation, %{})
-  assert is_nil(new_obligation = nil)
+test "complete/4 requires next_due_by for a recurring, not-ended series" do
+  {primary, entity, obligation} = recurring_obligation_fixture(interval: "monthly")
+  # Omitting next_due_by would leave the series with no successor cycle → rejected
+  assert {:error, :next_due_required} = Obligations.complete(entity, primary, obligation, %{})
+end
+
+test "complete/4 is idempotent — a second Done on the same cycle is rejected" do
+  {primary, entity, obligation} = recurring_obligation_fixture(interval: "monthly")
+  {:ok, done_obligation, _} =
+    Obligations.complete(entity, primary, obligation, %{next_due_by: ~D[2026-02-15]})
+  # The cycle is no longer live (completed_at set) — re-completing fails
+  assert {:error, :not_live} = Obligations.complete(entity, primary, done_obligation, %{next_due_by: ~D[2026-03-15]})
+end
+
+test "end_series cancels the current cycle, so it can never be completed/spawn" do
+  {manager, entity, obligation} = recurring_obligation_fixture(interval: "monthly")
+  {:ok, ended} = Obligations.end_series(entity, manager, obligation, %{})
+  # End series == cancel current obligation + stamp series_ended_at (semantics A)
+  assert ended.status == "cancelled"
+  assert ended.series_ended_at
+  # A non-live (cancelled) cycle cannot be completed — no next obligation is ever spawned
+  assert {:error, :not_live} = Obligations.complete(entity, manager, ended, %{})
 end
 ```
 
@@ -570,7 +624,7 @@ end
 ```elixir
 defmodule Argus.Obligations.Completion do
   def validate_done_requirements(type, done_attrs, documents) do
-    with :ok <- validate_note(type, done_attrs),
+    with :ok <- validate_note(type, done_attrs[:note]),
          :ok <- validate_document_slots(type, documents) do
       :ok
     end
@@ -598,12 +652,18 @@ end
 In `Ecto.Multi`:
 1. Validate authorization (`mark_done`)
 2. Validate completion requirements
-3. Insert `done` event + document
-4. If `Recurrence.recurring?(type)` and not `Series.ended?(series_id)` and `next_due_by` present → `create_obligation` with same `series_id`, copy assignees/collaborators
+3. **Recurrence guard:** if `Recurrence.recurring?(type)` and not `Series.ended?(series_id)` → `next_due_by` is **required**; missing/blank → `{:error, :next_due_required}`. (This guarantees no series ever loses its successor cycle — fix 5.)
+4. **Guarded close (concurrency + idempotency):** stamp `completed_at` with a conditional update —
+   `from(o in Obligation, where: o.id == ^id and is_nil(o.completed_at) and o.status == "active")
+   |> Repo.update_all(set: [completed_at: now])`. If `0` rows are updated, abort the Multi with
+   `{:error, :not_live}` (someone already completed/cancelled it). This is the single source of
+   truth for "is this cycle still live", replacing any in-memory `status` check.
+5. Insert `done` event + document
+6. If recurring and not ended → `create_obligation` with same `series_id`, copy assignees/collaborators (the partial unique index on `series_id` is the backstop against a duplicate spawn)
 
 Return `{:ok, completed, new_obligation | nil}`
 
-- [ ] **Step 4: Implement `Series.ended?/1`** — `Repo.exists?` where `series_id` and `series_ended_at` not nil.
+- [ ] **Step 4: Implement `Series.ended?/1`** — `Repo.exists?` where `series_id` and `series_ended_at` not nil. Under semantics A, End series cancels the current cycle, so a *live* obligation in an ended series can't exist — this guard is defensive only.
 
 - [ ] **Step 5: Run tests — PASS**
 
@@ -626,14 +686,15 @@ test "cancel_obligation/3 sets status cancelled and logs event" do
   assert cancelled.status == "cancelled"
 end
 
-test "end_series/3 sets series_ended_at" do
+test "end_series cancels current obligation and sets series_ended_at" do
   {manager, entity, obligation} = recurring_obligation_fixture()
   {:ok, ended} = Obligations.end_series(entity, manager, obligation, %{})
+  assert ended.status == "cancelled"
   assert ended.series_ended_at
 end
 ```
 
-- [ ] **Step 2: Implement** — manager/admin only; insert `cancelled` event; `end_series` also sets `series_ended_at` on current obligation.
+- [ ] **Step 2: Implement** — manager/admin only; insert `cancelled` event and set `status: "cancelled"`. `end_series` does the same **plus** sets `series_ended_at` on the current obligation (semantics A: ending a series cancels the in-flight cycle).
 
 - [ ] **Step 3: Run tests — PASS**
 
@@ -766,12 +827,23 @@ defmodule Argus.Obligations.Urgency do
 
   @type urgency :: :overdue | :due_soon | :ok
 
+  # `today` is REQUIRED — callers pass the date in the entity's timezone (see today_for/1).
+  # No UTC default: defaulting to Date.utc_today() silently mis-dates non-UTC tenants.
   @spec classify(Type.t(), Date.t(), Date.t()) :: urgency()
-  def classify(%Type{reminder_offsets: offsets}, due_by, today \\ Date.utc_today()) do
+  def classify(%Type{reminder_offsets: offsets}, due_by, today) do
     cond do
       Date.compare(due_by, today) == :lt -> :overdue
       due_soon?(offsets, due_by, today) -> :due_soon
       true -> :ok
+    end
+  end
+
+  # "Today" in the entity's timezone — fix 3. Dashboards compute this once and pass it in.
+  @spec today_for(String.t()) :: Date.t()
+  def today_for(timezone) do
+    case DateTime.now(timezone) do
+      {:ok, dt} -> DateTime.to_date(dt)
+      _ -> Date.utc_today()            # fall back only if the tz is unknown to tzdata
     end
   end
 
@@ -783,9 +855,22 @@ defmodule Argus.Obligations.Urgency do
     |> Enum.any?(fn offset -> days <= offset end)
   end
 
+  # Defensive even though Type validates at write time (fix 4): skip non-integer/blank tokens
+  # rather than raising on the render path. Empty/nil → a sane default offset.
   def parse_offsets(nil), do: [7]
   def parse_offsets(str) do
-    str |> String.split(",") |> Enum.map(&String.trim/1) |> Enum.map(&String.to_integer/1)
+    parsed =
+      str
+      |> String.split(",")
+      |> Enum.map(&String.trim/1)
+      |> Enum.flat_map(fn tok ->
+        case Integer.parse(tok) do
+          {n, ""} when n >= 0 -> [n]
+          _ -> []
+        end
+      end)
+
+    if parsed == [], do: [7], else: parsed
   end
 end
 ```
@@ -810,22 +895,28 @@ Member default tab: `my_work`. Manager default: `team`.
 
 - [ ] **Step 2: Queries**
 
+Filter is **live cycles only** — `status == "active" AND is_nil(completed_at)`. Filtering on
+`status` alone would leak completed obligations onto the dashboard forever (they keep
+`status = "active"`).
+
 ```elixir
 def list_my_work(entity, user) do
   from o in Obligation,
-    where: o.entity_id == ^entity.id and o.status == "active",
+    where: o.entity_id == ^entity.id and o.status == "active" and is_nil(o.completed_at),
     where: o.primary_assignee_id == ^user.id or o.id in subquery(collaborator_ids(user)),
     order_by: [asc: o.due_by]
 end
 
 def list_team_overview(entity) do
   from o in Obligation,
-    where: o.entity_id == ^entity.id and o.status == "active",
+    where: o.entity_id == ^entity.id and o.status == "active" and is_nil(o.completed_at),
     order_by: [asc: o.due_by]
 end
 ```
 
-- [ ] **Step 3: UI** — table with title, type, assignee, due_by, `<.urgency_badge>`; sort overdue first, then due_soon, then `due_by` asc
+- [ ] **Step 3: UI** — table with title, type, assignee, due_by, `<.urgency_badge>`. Compute
+  `today = Urgency.today_for(entity.timezone)` **once** in `mount` and pass it to every
+  `classify/3` call (fix 3). Sort overdue first, then due_soon, then `due_by` asc.
 
 - [ ] **Step 4: Commit**
 
@@ -850,11 +941,15 @@ end
 
 - [ ] **Step 3: Done modal**
 
-- If recurring: show date input
-- Pre-fill via `Recurrence.next_due_suggestion/2` for fixed intervals; blank for `custom`
+- If recurring **and series not ended**: show a date input that is **required** — the modal
+  cannot be submitted without a next due date (mirrors the `{:error, :next_due_required}` guard
+  in `complete/4`, fix 5). To finish a recurring obligation *without* a successor, the user picks
+  **End series** instead, not blank-submit.
+- Pre-fill via `Recurrence.next_due_suggestion/2` for fixed intervals; blank for `custom` (user must pick)
 - Enforce note/doc fields per type on submit
 
-- [ ] **Step 4: LiveView tests** for create, start_progress, complete with spawn
+- [ ] **Step 4: LiveView tests** for create, start_progress, complete with spawn, and that the
+  Done modal blocks submit when a recurring obligation has no next due date
 
 - [ ] **Step 5: Commit**
 
@@ -913,9 +1008,15 @@ end
 | custom interval manual date | Task 7, 16 |
 | Event workflow open/in_progress/done | Task 8, 9, 16 |
 | Recurrence spawns new obligation | Task 9 |
-| series_id linking | Task 8, 9, 20 |
+| series_id linking | Task 8, 9, 19 |
 | Cancel + end series | Task 10 |
 | Completion rules on Done | Task 9 |
+| Terminal `completed_at` (dashboards exclude done cycles) | Task 8, 9, 15 |
+| One live cycle per series (partial unique index) | Task 8, 9 |
+| Idempotent / concurrency-safe Done | Task 9 |
+| Recurring Done requires next_due_by (no series limbo) | Task 9, 16 |
+| Urgency uses entity timezone | Task 14, 15 |
+| CSV type fields validated at write time | Task 7 |
 | Incremental documents + void | Task 11 |
 | Audit log corrections | Task 12 |
 | Dashboard urgency badges | Task 14, 15 |
