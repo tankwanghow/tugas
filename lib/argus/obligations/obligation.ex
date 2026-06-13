@@ -35,5 +35,6 @@ defmodule Argus.Obligations.Obligation do
     |> cast(attrs, @cast_fields)
     |> validate_required([:title, :obligation_type_id, :primary_assignee_id, :due_by])
     |> validate_inclusion(:status, ["active", "cancelled"])
+    |> unique_constraint(:series_id, name: :obligations_one_live_cycle_per_series)
   end
 end

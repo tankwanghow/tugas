@@ -113,6 +113,38 @@ defmodule Argus.ObligationsTest do
     end
   end
 
+  describe "Obligation.changeset/2" do
+    alias Argus.Obligations.Obligation
+    alias Argus.Repo
+
+    test "translates one-live-cycle-per-series unique constraint" do
+      {_scope, obligation} = recurring_primary_scope_fixture()
+
+      duplicate =
+        %Obligation{
+          entity_id: obligation.entity_id,
+          series_id: obligation.series_id,
+          status: "active",
+          complete_note_required: false,
+          complete_documents: ""
+        }
+        |> Obligation.changeset(%{
+          title: "Racing successor",
+          obligation_type_id: obligation.obligation_type_id,
+          primary_assignee_id: obligation.primary_assignee_id,
+          due_by: ~D[2026-07-15]
+        })
+
+      assert {:error, changeset} = Repo.insert(duplicate)
+
+      assert {:series_id, {_msg, opts}} =
+               Enum.find(changeset.errors, fn {field, _} -> field == :series_id end)
+
+      assert opts[:constraint] == :unique
+      assert opts[:constraint_name] == "obligations_one_live_cycle_per_series"
+    end
+  end
+
   describe "live/1" do
     test "includes active incomplete obligations only" do
       {_scope, obligation} = obligation_fixture(manager_scope_fixture())
