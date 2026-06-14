@@ -112,6 +112,32 @@ defmodule ArgusWeb.Plugs.AutoRouteByDeviceTest do
       assert conn.halted
     end
 
+    test "redirects mobile UA from desktop entity picker to mobile picker", %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("user-agent", @mobile_ua)
+        |> Map.put(:request_path, "/entities")
+        |> Map.put(:path_info, ["entities"])
+        |> Map.put(:query_string, "pick=1")
+        |> AutoRouteByDevice.call([])
+
+      assert redirected_to(conn) == "/m/entities?pick=1"
+      assert conn.halted
+    end
+
+    test "redirects desktop UA from mobile entity picker to desktop picker", %{conn: conn} do
+      conn =
+        conn
+        |> put_req_header("user-agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X)")
+        |> Map.put(:request_path, "/m/entities")
+        |> Map.put(:path_info, ["m", "entities"])
+        |> Map.put(:query_string, "pick=1")
+        |> AutoRouteByDevice.call([])
+
+      assert redirected_to(conn) == "/entities?pick=1"
+      assert conn.halted
+    end
+
     test "argus_view=mobile cookie forces mobile from desktop", %{conn: conn} do
       conn =
         conn

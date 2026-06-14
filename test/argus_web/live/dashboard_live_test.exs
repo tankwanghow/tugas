@@ -20,6 +20,17 @@ defmodule ArgusWeb.DashboardLiveTest do
     refute has_element?(view, "#tab-team-overview.tab-active")
   end
 
+  test "user menu has all entities link", %{conn: conn} do
+    {scope, _} = manager_obligation_scope_fixture()
+    conn = log_in_user(conn, scope.user)
+
+    {:ok, view, _html} =
+      live(conn, ~p"/entities/#{scope.entity.slug}")
+
+    assert has_element?(view, "a[href='/entities?pick=1']", "All entities")
+    refute has_element?(view, "li.menu-title", "Switch entity")
+  end
+
   test "manager defaults to Team overview tab", %{conn: conn} do
     {scope, _obligation} = manager_obligation_scope_fixture()
 

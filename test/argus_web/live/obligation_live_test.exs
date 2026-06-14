@@ -40,7 +40,8 @@ defmodule ArgusWeb.ObligationLiveTest do
         due_by: ~D[2026-04-30]
       })
 
-    assert {:ok, _} = Obligations.cancel_obligation(manager, to_cancel, %{})
+    assert {:ok, _} =
+             Obligations.cancel_obligation(manager, to_cancel, %{note: "No longer needed"})
 
     {:ok, view, _html} = live(conn, ~p"/entities/#{manager.entity.slug}/obligations")
 
@@ -239,6 +240,51 @@ defmodule ArgusWeb.ObligationLiveTest do
     assert has_element?(view, "#series-history")
     assert has_element?(view, "#series-cycle-#{obligation.id}", "Completed")
     assert has_element?(view, "#series-cycle-#{successor.id}", "Current")
+  end
+
+  test "cancel modal requires a reason", %{conn: conn} do
+    {scope, obligation} = manager_obligation_scope_fixture()
+    conn = log_in_user(conn, scope.user)
+
+    {:ok, view, _html} =
+      live(conn, ~p"/entities/#{scope.entity.slug}/obligations/#{obligation.id}")
+
+    view |> element("#cancel-btn") |> render_click()
+    assert has_element?(view, "#cancel-modal")
+
+    view |> form("#cancel-form", %{"cancel" => %{"note" => ""}}) |> render_submit()
+    assert render(view) =~ "A reason is required"
+  end
+
+  test "cancel modal submits reason and redirects", %{conn: conn} do
+    {scope, obligation} = manager_obligation_scope_fixture()
+    conn = log_in_user(conn, scope.user)
+
+    {:ok, view, _html} =
+      live(conn, ~p"/entities/#{scope.entity.slug}/obligations/#{obligation.id}")
+
+    view |> element("#cancel-btn") |> render_click()
+
+    view
+    |> form("#cancel-form", %{"cancel" => %{"note" => "Duplicate entry"}})
+    |> render_submit()
+
+    assert_redirect(view, ~p"/entities/#{scope.entity.slug}/obligations")
+    assert Obligations.get_obligation!(scope, obligation.id).status == "cancelled"
+  end
+
+  test "end series modal requires a reason", %{conn: conn} do
+    {scope, obligation} = recurring_manager_scope_fixture(interval: "monthly")
+    conn = log_in_user(conn, scope.user)
+
+    {:ok, view, _html} =
+      live(conn, ~p"/entities/#{scope.entity.slug}/obligations/#{obligation.id}")
+
+    view |> element("#end-series-btn") |> render_click()
+    assert has_element?(view, "#end-series-modal")
+
+    view |> form("#end-series-form", %{"end_series" => %{"note" => ""}}) |> render_submit()
+    assert render(view) =~ "A reason is required"
   end
 
   test "done modal requires next due for recurring obligations", %{conn: conn} do

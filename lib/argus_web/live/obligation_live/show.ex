@@ -33,6 +33,36 @@ defmodule ArgusWeb.ObligationLive.Show do
           </:actions>
         </.header>
 
+        <section :if={@live?} id="obligation-actions" class="flex flex-wrap gap-2">
+          <button
+            :if={Authorization.can?(@current_scope, :mark_done, @obligation)}
+            id="done-btn"
+            type="button"
+            phx-click="open_done_modal"
+            class="btn btn-primary btn-sm"
+          >
+            Mark done
+          </button>
+          <button
+            :if={Authorization.can?(@current_scope, :cancel_obligation)}
+            id="cancel-btn"
+            type="button"
+            phx-click="open_cancel_modal"
+            class="btn btn-outline btn-error btn-sm"
+          >
+            Cancel
+          </button>
+          <button
+            :if={Authorization.can?(@current_scope, :end_series)}
+            id="end-series-btn"
+            type="button"
+            phx-click="open_end_series_modal"
+            class="btn btn-ghost btn-sm"
+          >
+            End series
+          </button>
+        </section>
+
         <section class="mt-6">
           <h2 class="text-sm font-semibold uppercase tracking-wide text-base-content/60">
             Assignees
@@ -153,46 +183,17 @@ defmodule ArgusWeb.ObligationLive.Show do
               </ul>
             </li>
           </ol>
-        </section>
-
-        <section :if={@live?} id="obligation-actions" class="mt-8 flex flex-wrap gap-2">
           <button
-            :if={Authorization.can?(@current_scope, :start_progress, @obligation)}
+            :if={@live? and Authorization.can?(@current_scope, :start_progress, @obligation)}
             id="start-progress-btn"
             type="button"
             phx-click="start_progress"
-            class="btn btn-outline btn-sm"
+            class="btn btn-outline btn-sm mt-4"
           >
             Update progress
           </button>
-          <button
-            :if={Authorization.can?(@current_scope, :mark_done, @obligation)}
-            id="done-btn"
-            type="button"
-            phx-click="open_done_modal"
-            class="btn btn-primary btn-sm"
-          >
-            Mark done
-          </button>
-          <button
-            :if={Authorization.can?(@current_scope, :cancel_obligation)}
-            id="cancel-btn"
-            type="button"
-            phx-click="cancel"
-            class="btn btn-outline btn-error btn-sm"
-          >
-            Cancel
-          </button>
-          <button
-            :if={Authorization.can?(@current_scope, :end_series)}
-            id="end-series-btn"
-            type="button"
-            phx-click="end_series"
-            class="btn btn-ghost btn-sm"
-          >
-            End series
-          </button>
         </section>
+
         <div :if={@audit_logs != []} class="mt-8">
           <button
             :if={not @show_corrections?}
@@ -459,6 +460,59 @@ defmodule ArgusWeb.ObligationLive.Show do
           <button type="button" phx-click="close_done_modal">close</button>
         </form>
       </div>
+
+      <div :if={@show_cancel_modal} id="cancel-modal" class="modal modal-open">
+        <div class="modal-box">
+          <h3 class="font-bold text-lg">Cancel obligation</h3>
+          <p class="text-sm text-base-content/60 mt-1">
+            This removes the obligation from active dashboards. A reason is recorded on the timeline.
+          </p>
+          <.form for={@cancel_form} id="cancel-form" phx-submit="confirm_cancel" class="mt-4">
+            <.input
+              field={@cancel_form[:note]}
+              type="textarea"
+              label="Reason for cancelling"
+              required
+            />
+            <div class="modal-action">
+              <button type="button" class="btn" phx-click="close_cancel_modal">Back</button>
+              <.button class="btn btn-error" phx-disable-with="Cancelling…">Cancel obligation</.button>
+            </div>
+          </.form>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button type="button" phx-click="close_cancel_modal">close</button>
+        </form>
+      </div>
+
+      <div :if={@show_end_series_modal} id="end-series-modal" class="modal modal-open">
+        <div class="modal-box">
+          <h3 class="font-bold text-lg">End series</h3>
+          <p class="text-sm text-base-content/60 mt-1">
+            Cancels the current cycle and stops future recurrence. A reason is recorded on the timeline.
+          </p>
+          <.form
+            for={@end_series_form}
+            id="end-series-form"
+            phx-submit="confirm_end_series"
+            class="mt-4"
+          >
+            <.input
+              field={@end_series_form[:note]}
+              type="textarea"
+              label="Reason for ending series"
+              required
+            />
+            <div class="modal-action">
+              <button type="button" class="btn" phx-click="close_end_series_modal">Back</button>
+              <.button class="btn btn-error" phx-disable-with="Ending…">End series</.button>
+            </div>
+          </.form>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button type="button" phx-click="close_end_series_modal">close</button>
+        </form>
+      </div>
     </Layouts.app>
     """
   end
@@ -480,6 +534,8 @@ defmodule ArgusWeb.ObligationLive.Show do
     {:ok,
      socket
      |> assign(:show_done_modal, false)
+     |> assign(:show_cancel_modal, false)
+     |> assign(:show_end_series_modal, false)
      |> assign(:show_edit_modal, false)
      |> assign(:documents_modal_event_id, nil)
      |> assign(:documents_modal_event, nil)
@@ -496,6 +552,8 @@ defmodule ArgusWeb.ObligationLive.Show do
      |> allow_upload(:document, accept: :any, max_entries: 1, max_file_size: 20_000_000)
      |> assign_obligation(obligation)
      |> assign_done_form(obligation)
+     |> assign_cancel_form()
+     |> assign_end_series_form()
      |> assign_edit_form(obligation)}
   end
 
@@ -652,30 +710,52 @@ defmodule ArgusWeb.ObligationLive.Show do
     end
   end
 
-  def handle_event("cancel", _params, socket) do
+  def handle_event("open_cancel_modal", _params, socket) do
+    {:noreply, socket |> assign(:show_cancel_modal, true) |> assign_cancel_form()}
+  end
+
+  def handle_event("close_cancel_modal", _params, socket) do
+    {:noreply, assign(socket, :show_cancel_modal, false)}
+  end
+
+  def handle_event("confirm_cancel", %{"cancel" => %{"note" => note}}, socket) do
     scope = socket.assigns.current_scope
 
-    case Obligations.cancel_obligation(scope, socket.assigns.obligation, %{}) do
+    case Obligations.cancel_obligation(scope, socket.assigns.obligation, %{note: note}) do
       {:ok, _} ->
         {:noreply,
          socket
          |> put_flash(:info, "Obligation cancelled.")
          |> push_navigate(to: ~p"/entities/#{scope.entity.slug}/obligations")}
 
+      {:error, :note_required} ->
+        {:noreply, put_flash(socket, :error, "A reason is required.")}
+
       _ ->
         {:noreply, put_flash(socket, :error, "Could not cancel.")}
     end
   end
 
-  def handle_event("end_series", _params, socket) do
+  def handle_event("open_end_series_modal", _params, socket) do
+    {:noreply, socket |> assign(:show_end_series_modal, true) |> assign_end_series_form()}
+  end
+
+  def handle_event("close_end_series_modal", _params, socket) do
+    {:noreply, assign(socket, :show_end_series_modal, false)}
+  end
+
+  def handle_event("confirm_end_series", %{"end_series" => %{"note" => note}}, socket) do
     scope = socket.assigns.current_scope
 
-    case Obligations.end_series(scope, socket.assigns.obligation, %{}) do
+    case Obligations.end_series(scope, socket.assigns.obligation, %{note: note}) do
       {:ok, _} ->
         {:noreply,
          socket
          |> put_flash(:info, "Series ended.")
          |> push_navigate(to: ~p"/entities/#{scope.entity.slug}/obligations")}
+
+      {:error, :note_required} ->
+        {:noreply, put_flash(socket, :error, "A reason is required.")}
 
       _ ->
         {:noreply, put_flash(socket, :error, "Could not end series.")}
@@ -954,6 +1034,14 @@ defmodule ArgusWeb.ObligationLive.Show do
       :done_form,
       to_form(%{"note" => "", "next_due_by" => iso_date(suggestion)}, as: :done)
     )
+  end
+
+  defp assign_cancel_form(socket) do
+    assign(socket, :cancel_form, to_form(%{"note" => ""}, as: :cancel))
+  end
+
+  defp assign_end_series_form(socket) do
+    assign(socket, :end_series_form, to_form(%{"note" => ""}, as: :end_series))
   end
 
   defp recurring?(obligation) do

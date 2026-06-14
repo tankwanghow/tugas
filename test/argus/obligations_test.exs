@@ -95,20 +95,39 @@ defmodule Argus.ObligationsTest do
   end
 
   describe "cancel_obligation/3" do
-    test "sets status cancelled and logs event" do
+    test "requires a cancel reason" do
       {scope, obligation} = manager_obligation_scope_fixture()
-      assert {:ok, cancelled} = Obligations.cancel_obligation(scope, obligation, %{})
+      assert {:error, :note_required} = Obligations.cancel_obligation(scope, obligation, %{})
+    end
+
+    test "sets status cancelled and logs event with reason" do
+      {scope, obligation} = manager_obligation_scope_fixture()
+
+      assert {:ok, cancelled} =
+               Obligations.cancel_obligation(scope, obligation, %{note: "No longer applicable"})
+
       assert cancelled.status == "cancelled"
-      assert Obligations.latest_event(cancelled).status == "cancelled"
+      event = Obligations.latest_event(cancelled)
+      assert event.status == "cancelled"
+      assert event.note == "No longer applicable"
     end
   end
 
   describe "end_series/3" do
+    test "requires a reason" do
+      {scope, obligation} = recurring_manager_scope_fixture(interval: "monthly")
+      assert {:error, :note_required} = Obligations.end_series(scope, obligation, %{})
+    end
+
     test "cancels the current cycle so it can never be completed/spawn" do
       {scope, obligation} = recurring_manager_scope_fixture(interval: "monthly")
-      assert {:ok, ended} = Obligations.end_series(scope, obligation, %{})
+
+      assert {:ok, ended} =
+               Obligations.end_series(scope, obligation, %{note: "Client left"})
+
       assert ended.status == "cancelled"
       assert ended.series_ended_at
+      assert Obligations.latest_event(ended).note == "Client left"
       assert {:error, :not_live} = Obligations.complete(scope, ended, %{})
     end
   end
@@ -177,7 +196,8 @@ defmodule Argus.ObligationsTest do
           due_by: ~D[2026-04-30]
         })
 
-      assert {:ok, _} = Obligations.cancel_obligation(manager, cancelled, %{})
+      assert {:ok, _} =
+               Obligations.cancel_obligation(manager, cancelled, %{note: "Superseded"})
 
       live_ids = manager |> Obligations.list_obligations(status: :live) |> Enum.map(& &1.id)
 

@@ -96,6 +96,15 @@ defmodule ArgusWeb.MembershipLive.Index do
                 </div>
               </div>
               <span class="badge badge-warning badge-sm">pending</span>
+              <button
+                id={"revoke-invite-#{invite.id}"}
+                type="button"
+                phx-click="revoke_invitation"
+                phx-value-invitation_id={invite.id}
+                class="btn btn-ghost btn-xs text-error"
+              >
+                Revoke
+              </button>
             </li>
           </ul>
         </section>
@@ -127,6 +136,21 @@ defmodule ArgusWeb.MembershipLive.Index do
 
       {:error, _} ->
         {:noreply, put_flash(socket, :error, "Could not update role.")}
+    end
+  end
+
+  def handle_event("revoke_invitation", %{"invitation_id" => invitation_id}, socket) do
+    scope = socket.assigns.current_scope
+
+    case Entities.revoke_invitation(scope, invitation_id) do
+      {:ok, _} ->
+        {:noreply, socket |> put_flash(:info, "Invitation revoked.") |> load_members()}
+
+      :not_authorise ->
+        {:noreply, put_flash(socket, :error, "Not authorized.")}
+
+      {:error, :not_found} ->
+        {:noreply, put_flash(socket, :error, "Invitation not found.")}
     end
   end
 

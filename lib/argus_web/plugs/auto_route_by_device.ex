@@ -23,6 +23,12 @@ defmodule ArgusWeb.Plugs.AutoRouteByDevice do
     path = conn.request_path
 
     cond do
+      cookie == "mobile" and path == "/entities" ->
+        redirect_picker(conn, "/entities", "/m/entities")
+
+      cookie == "desktop" and path == "/m/entities" ->
+        redirect_picker(conn, "/m/entities", "/entities")
+
       cookie == "mobile" and desktop_url?(path) ->
         maybe_redirect_to_mobile(conn, path)
 
@@ -31,6 +37,12 @@ defmodule ArgusWeb.Plugs.AutoRouteByDevice do
 
       cookie ->
         conn
+
+      mobile_ua?(conn) and path == "/entities" ->
+        redirect_picker(conn, "/entities", "/m/entities")
+
+      not mobile_ua?(conn) and path == "/m/entities" ->
+        redirect_picker(conn, "/m/entities", "/entities")
 
       mobile_ua?(conn) and desktop_url?(path) ->
         maybe_redirect_to_mobile(conn, path)
@@ -63,6 +75,14 @@ defmodule ArgusWeb.Plugs.AutoRouteByDevice do
       :error ->
         conn
     end
+  end
+
+  defp redirect_picker(conn, _from, to) do
+    qs = if conn.query_string == "", do: "", else: "?" <> conn.query_string
+
+    conn
+    |> Phoenix.Controller.redirect(to: to <> qs)
+    |> halt()
   end
 
   defp redirect_swap(conn, path, from, to) do

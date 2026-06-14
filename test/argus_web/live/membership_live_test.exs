@@ -40,6 +40,22 @@ defmodule ArgusWeb.MembershipLiveTest do
     assert Entities.get_membership!(member, admin.entity).role == "manager"
   end
 
+  test "admin can revoke a pending invitation", %{conn: conn} do
+    admin = Argus.EntitiesFixtures.entity_scope_fixture()
+    conn = log_in_user(conn, admin.user)
+
+    {:ok, invitation} = Entities.invite_member(admin, "pending@example.com", "member")
+
+    {:ok, view, _html} = live(conn, ~p"/entities/#{admin.entity.slug}/members")
+
+    assert has_element?(view, "#revoke-invite-#{invitation.id}")
+
+    view |> element("#revoke-invite-#{invitation.id}") |> render_click()
+
+    refute has_element?(view, "#pending-invitations", "pending@example.com")
+    assert Entities.list_pending_invitations(admin.entity) == []
+  end
+
   test "non-admin does not see management controls", %{conn: conn} do
     manager = Argus.EntitiesFixtures.manager_scope_fixture()
     conn = log_in_user(conn, manager.user)

@@ -40,6 +40,27 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
           )}
         </p>
 
+        <div :if={@live?} id="obligation-actions" class="mt-4 grid grid-cols-1 gap-2">
+          <button
+            :if={Authorization.can?(@current_scope, :mark_done, @obligation)}
+            id="m-done-btn"
+            type="button"
+            phx-click="open_done_modal"
+            class="btn btn-primary btn-lg"
+          >
+            Mark done
+          </button>
+          <button
+            :if={Authorization.can?(@current_scope, :cancel_obligation)}
+            id="m-cancel-btn"
+            type="button"
+            phx-click="open_cancel_modal"
+            class="btn btn-ghost btn-error btn-lg"
+          >
+            Cancel
+          </button>
+        </div>
+
         <div class="mt-3 flex flex-wrap gap-1">
           <span class="badge badge-primary badge-soft gap-1">
             <.icon name="hero-user-mini" class="size-3" />{@obligation.primary_assignee.email}
@@ -133,36 +154,15 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
             </ul>
           </li>
         </ol>
-
-        <div :if={@live?} class="mt-6 grid grid-cols-1 gap-2">
-          <button
-            :if={Authorization.can?(@current_scope, :start_progress, @obligation)}
-            id="m-start-progress-btn"
-            type="button"
-            phx-click="start_progress"
-            class="btn btn-outline btn-lg"
-          >
-            Update progress
-          </button>
-          <button
-            :if={Authorization.can?(@current_scope, :mark_done, @obligation)}
-            id="m-done-btn"
-            type="button"
-            phx-click="open_done_modal"
-            class="btn btn-primary btn-lg"
-          >
-            Mark done
-          </button>
-          <button
-            :if={Authorization.can?(@current_scope, :cancel_obligation)}
-            id="m-cancel-btn"
-            type="button"
-            phx-click="cancel"
-            class="btn btn-ghost btn-error btn-lg"
-          >
-            Cancel
-          </button>
-        </div>
+        <button
+          :if={@live? and Authorization.can?(@current_scope, :start_progress, @obligation)}
+          id="m-start-progress-btn"
+          type="button"
+          phx-click="start_progress"
+          class="btn btn-outline btn-lg mt-4 w-full"
+        >
+          Update progress
+        </button>
       </div>
 
       <div :if={@show_edit_modal} id="m-edit-modal" class="modal modal-bottom modal-open">
@@ -353,6 +353,32 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
           </.form>
         </div>
       </div>
+
+      <div :if={@show_cancel_modal} id="m-cancel-modal" class="modal modal-bottom modal-open">
+        <div class="modal-box">
+          <h3 class="font-bold text-lg">Cancel obligation</h3>
+          <p class="text-sm text-base-content/60 mt-1">
+            This removes the obligation from active dashboards.
+          </p>
+          <.form
+            for={@cancel_form}
+            id="m-cancel-form"
+            phx-submit="confirm_cancel"
+            class="mt-4 space-y-3"
+          >
+            <.input
+              field={@cancel_form[:note]}
+              type="textarea"
+              label="Reason for cancelling"
+              required
+            />
+            <div class="modal-action">
+              <button type="button" class="btn" phx-click="close_cancel_modal">Back</button>
+              <.button class="btn btn-error" phx-disable-with="Cancelling…">Cancel obligation</.button>
+            </div>
+          </.form>
+        </div>
+      </div>
     </Layouts.mobile_app>
     """
   end
@@ -364,6 +390,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
     {:ok,
      socket
      |> assign(:show_done_modal, false)
+     |> assign(:show_cancel_modal, false)
      |> assign(:show_edit_modal, false)
      |> assign(:documents_modal_event_id, nil)
      |> assign(:documents_modal_event, nil)
@@ -510,15 +537,29 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
     end
   end
 
-  def handle_event("cancel", _params, socket) do
+  def handle_event("open_cancel_modal", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_cancel_modal, true)
+     |> assign(:cancel_form, to_form(%{"note" => ""}, as: :cancel))}
+  end
+
+  def handle_event("close_cancel_modal", _params, socket) do
+    {:noreply, assign(socket, :show_cancel_modal, false)}
+  end
+
+  def handle_event("confirm_cancel", %{"cancel" => %{"note" => note}}, socket) do
     scope = socket.assigns.current_scope
 
-    case Obligations.cancel_obligation(scope, socket.assigns.obligation, %{}) do
+    case Obligations.cancel_obligation(scope, socket.assigns.obligation, %{note: note}) do
       {:ok, _} ->
         {:noreply,
          socket
          |> put_flash(:info, "Obligation cancelled.")
          |> push_navigate(to: ~p"/m/#{scope.entity.slug}/obligations")}
+
+      {:error, :note_required} ->
+        {:noreply, put_flash(socket, :error, "A reason is required.")}
 
       _ ->
         {:noreply, put_flash(socket, :error, "Could not cancel.")}
@@ -678,6 +719,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
       :done_form,
       to_form(%{"note" => "", "next_due_by" => suggestion(obligation, recurring?)}, as: :done)
     )
+    |> assign(:cancel_form, to_form(%{"note" => ""}, as: :cancel))
     |> assign_edit_form(obligation)
   end
 

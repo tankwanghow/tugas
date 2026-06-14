@@ -46,7 +46,8 @@ defmodule ArgusWeb.Router do
       on_mount: [{ArgusWeb.UserAuth, :require_authenticated}] do
       live "/users/settings", UserLive.Settings, :edit
       live "/users/settings/confirm-email/:token", UserLive.Settings, :confirm_email
-      live "/entities", EntityLive.Select, :index
+      live "/entities", EntityLive.Select, :desktop
+      live "/m/entities", EntityLive.Select, :mobile
     end
 
     live_session :entity_scoped,

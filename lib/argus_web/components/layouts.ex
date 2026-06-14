@@ -44,7 +44,7 @@ defmodule ArgusWeb.Layouts do
 
         <span
           :if={entity_scope?(@current_scope)}
-          class="text-sm text-base-content/70 truncate max-w-[12rem]"
+          class="text-sm text-base-content/70"
         >
           {@current_scope.entity.name}
         </span>
@@ -91,16 +91,17 @@ defmodule ArgusWeb.Layouts do
 
         <.theme_toggle />
 
-        <div :if={account_scope?(@current_scope)} class="dropdown dropdown-end">
-          <div tabindex="0" role="button" class="btn btn-ghost btn-sm">
+        <details :if={account_scope?(@current_scope)} class="dropdown dropdown-end">
+          <summary class="btn btn-ghost btn-sm list-none [&::-webkit-details-marker]:hidden">
             <.icon name="hero-user-circle" class="size-5" />
-          </div>
-          <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow z-50 w-56 p-2">
+          </summary>
+          <ul class="dropdown-content menu bg-base-100 rounded-box shadow z-50 w-56 p-2 mt-2">
             <li class="menu-title truncate">{@current_scope.user.email}</li>
-            <li><.link navigate={~p"/users/settings"}>Settings</.link></li>
+            <li><.link href={~p"/users/settings"}>Settings</.link></li>
+            <li><.link href={~p"/entities?pick=1"}>All entities</.link></li>
             <li><.link href={~p"/users/log-out"} method="delete">Log out</.link></li>
           </ul>
-        </div>
+        </details>
       </div>
     </header>
 
@@ -109,6 +110,25 @@ defmodule ArgusWeb.Layouts do
         {render_slot(@inner_block)}
       </div>
     </main>
+
+    <.flash_group flash={@flash} />
+    """
+  end
+
+  @doc """
+  Minimal mobile shell for pages outside an entity context (e.g. entity picker).
+  """
+  attr :flash, :map, required: true
+  attr :current_scope, :map, default: nil
+  slot :inner_block, required: true
+
+  def mobile_simple(assigns) do
+    ~H"""
+    <div class="min-h-screen bg-base-100">
+      <main class="px-4 py-4">
+        {render_slot(@inner_block)}
+      </main>
+    </div>
 
     <.flash_group flash={@flash} />
     """
@@ -172,6 +192,11 @@ defmodule ArgusWeb.Layouts do
             <a href={~p"/set-view?#{[view: "desktop", to: "/entities/#{@slug}"]}"}>
               <.icon name="hero-computer-desktop" class="size-5" /> Switch to desktop
             </a>
+          </li>
+          <li>
+            <.link href={~p"/m/entities?pick=1"}>
+              <.icon name="hero-building-office-2" class="size-5" /> All entities
+            </.link>
           </li>
           <li>
             <.link navigate={~p"/users/settings"}>

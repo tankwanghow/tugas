@@ -114,6 +114,22 @@ defmodule Argus.Entities do
   end
 
   @doc """
+  Revokes a pending invitation. Admin-only (`:manage_entity`).
+  """
+  def revoke_invitation(%Scope{} = scope, invitation_id) do
+    cond do
+      not Authorization.can?(scope, :manage_entity) ->
+        :not_authorise
+
+      true ->
+        case fetch_revokable_invitation(scope.entity, invitation_id) do
+          nil -> {:error, :not_found}
+          invitation -> Repo.delete(invitation)
+        end
+    end
+  end
+
+  @doc """
   Changes a member's role. Admin-only (`:manage_entity`); the membership must
   belong to the scope's entity. Role changes don't consume a seat.
   """
@@ -153,6 +169,12 @@ defmodule Argus.Entities do
       expires_at: expires_at
     })
     |> Repo.insert()
+  end
+
+  defp fetch_revokable_invitation(%Entity{} = entity, invitation_id) do
+    Invitation
+    |> where([i], i.id == ^invitation_id and i.entity_id == ^entity.id and is_nil(i.accepted_at))
+    |> Repo.one()
   end
 
   defp fetch_pending_invitation(token) do

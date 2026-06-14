@@ -428,7 +428,8 @@ defmodule Argus.Obligations do
   def cancel_obligation(%Scope{} = scope, %Obligation{} = obligation, attrs) do
     note = Map.get(attrs, :note) || Map.get(attrs, "note")
 
-    with true <- Authorization.can?(scope, :cancel_obligation) do
+    with true <- Authorization.can?(scope, :cancel_obligation),
+         :ok <- validate_action_note(note) do
       now = DateTime.utc_now(:second)
 
       Ecto.Multi.new()
@@ -460,11 +461,15 @@ defmodule Argus.Obligations do
       end
     else
       false -> :not_authorise
+      {:error, _} = error -> error
     end
   end
 
-  def end_series(%Scope{} = scope, %Obligation{} = obligation, _attrs) do
-    with true <- Authorization.can?(scope, :end_series) do
+  def end_series(%Scope{} = scope, %Obligation{} = obligation, attrs) do
+    note = Map.get(attrs, :note) || Map.get(attrs, "note")
+
+    with true <- Authorization.can?(scope, :end_series),
+         :ok <- validate_action_note(note) do
       now = DateTime.utc_now(:second)
 
       Ecto.Multi.new()
@@ -481,7 +486,7 @@ defmodule Argus.Obligations do
           obligation_id: obligation.id,
           status_by_id: scope.user.id
         }
-        |> Event.changeset(%{status: "cancelled"})
+        |> Event.changeset(%{status: "cancelled", note: note})
       end)
       |> Repo.transaction()
       |> case do
@@ -496,6 +501,7 @@ defmodule Argus.Obligations do
       end
     else
       false -> :not_authorise
+      {:error, _} = error -> error
     end
   end
 
@@ -804,6 +810,9 @@ defmodule Argus.Obligations do
       :ok
     end
   end
+
+  defp validate_action_note(note) when note in [nil, ""], do: {:error, :note_required}
+  defp validate_action_note(_), do: :ok
 
   defp ensure_event_workable(%Event{} = event, %Obligation{} = obligation) do
     cond do

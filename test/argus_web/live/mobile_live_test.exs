@@ -34,6 +34,19 @@ defmodule ArgusWeb.MobileLiveTest do
     assert render(view) =~ "in_progress"
   end
 
+  test "mobile cancel modal requires a reason", %{conn: conn} do
+    {scope, obligation} = manager_obligation_scope_fixture()
+    conn = mobile_conn(conn, scope)
+
+    {:ok, view, _html} = live(conn, ~p"/m/#{scope.entity.slug}/obligations/#{obligation.id}")
+
+    view |> element("#m-cancel-btn") |> render_click()
+    assert has_element?(view, "#m-cancel-modal")
+
+    view |> form("#m-cancel-form", %{"cancel" => %{"note" => ""}}) |> render_submit()
+    assert render(view) =~ "A reason is required"
+  end
+
   test "mobile done modal requires next due for recurring", %{conn: conn} do
     {scope, obligation} = recurring_primary_scope_fixture(interval: "monthly")
     conn = mobile_conn(conn, scope)
@@ -88,6 +101,15 @@ defmodule ArgusWeb.MobileLiveTest do
     view |> element("#m-filter-my_completed") |> render_click()
     assert has_element?(view, "#m-ob-#{completed.id}")
     refute has_element?(view, "#m-obligations-empty")
+  end
+
+  test "mobile more sheet links to all entities picker", %{conn: conn} do
+    {scope, _} = assigned_member_scope_fixture()
+    conn = mobile_conn(conn, scope)
+
+    {:ok, view, _html} = live(conn, ~p"/m/#{scope.entity.slug}")
+
+    assert has_element?(view, "a[href='/m/entities?pick=1']", "All entities")
   end
 
   test "mobile UA is redirected from desktop dashboard to /m", %{conn: conn} do

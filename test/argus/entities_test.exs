@@ -80,4 +80,65 @@ defmodule Argus.EntitiesTest do
                Entities.accept_invitation(late_user, late_invitation.token)
     end
   end
+
+  describe "revoke_invitation/2" do
+    test "admin deletes a pending invitation" do
+      admin_scope = Argus.EntitiesFixtures.entity_scope_fixture()
+
+      {:ok, invitation} =
+        Entities.invite_member(admin_scope, "pending@example.com", "member")
+
+      assert {:ok, _} = Entities.revoke_invitation(admin_scope, invitation.id)
+      assert Entities.list_pending_invitations(admin_scope.entity) == []
+    end
+
+    test "revoking frees the email for a new invite" do
+      admin_scope = Argus.EntitiesFixtures.entity_scope_fixture()
+
+      {:ok, invitation} =
+        Entities.invite_member(admin_scope, "pending@example.com", "member")
+
+      assert {:ok, _} = Entities.revoke_invitation(admin_scope, invitation.id)
+
+      assert {:ok, _} =
+               Entities.invite_member(admin_scope, "pending@example.com", "manager")
+    end
+
+    test "manager cannot revoke invitations" do
+      admin_scope = Argus.EntitiesFixtures.entity_scope_fixture()
+      manager_user = user_fixture()
+
+      %Membership{
+        user_id: manager_user.id,
+        entity_id: admin_scope.entity.id,
+        role: "manager",
+        accepted_at: DateTime.utc_now(:second)
+      }
+      |> Membership.changeset(%{})
+      |> Argus.Repo.insert!()
+
+      manager_membership = Entities.get_membership!(manager_user, admin_scope.entity)
+
+      manager_scope =
+        Scope.put_entity(Scope.for_user(manager_user), admin_scope.entity, manager_membership)
+
+      {:ok, invitation} =
+        Entities.invite_member(admin_scope, "pending@example.com", "member")
+
+      assert :not_authorise = Entities.revoke_invitation(manager_scope, invitation.id)
+    end
+
+    test "returns not_found for accepted invitations" do
+      admin_scope = Argus.EntitiesFixtures.entity_scope_fixture()
+
+      {:ok, invitation} =
+        Entities.invite_member(admin_scope, "member@example.com", "member")
+
+      member = user_fixture(%{email: "member@example.com"})
+      assert {:ok, _} = Entities.accept_invitation(member, invitation.token)
+
+      assert {:error, :not_found} =
+               Entities.revoke_invitation(admin_scope, invitation.id)
+    end
+  end
 end
