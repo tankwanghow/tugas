@@ -114,7 +114,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
             phx-click="start_progress"
             class="btn btn-outline btn-lg"
           >
-            Start progress
+            Update progress
           </button>
           <button
             :if={Authorization.can?(@current_scope, :mark_done, @obligation)}
@@ -322,7 +322,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
 
   def handle_event("start_progress", _params, socket) do
     case Obligations.start_progress(socket.assigns.current_scope, socket.assigns.obligation) do
-      {:ok, _} -> {:noreply, reload(socket) |> put_flash(:info, "Progress started.")}
+      {:ok, _} -> {:noreply, reload(socket) |> put_flash(:info, "Progress updated.")}
       {:error, :not_open} -> {:noreply, put_flash(socket, :error, "Already in progress.")}
       :not_authorise -> {:noreply, put_flash(socket, :error, "Not authorized.")}
     end
