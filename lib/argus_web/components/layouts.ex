@@ -98,6 +98,11 @@ defmodule ArgusWeb.Layouts do
           <.icon name="hero-device-phone-mobile" class="size-5" />
         </a>
 
+        <nav :if={!account_scope?(@current_scope)} class="flex items-center gap-1">
+          <.link href={~p"/users/log-in"} class="btn btn-ghost btn-sm">Log in</.link>
+          <.link href={~p"/users/register"} class="btn btn-primary btn-sm">Get started</.link>
+        </nav>
+
         <.theme_toggle />
 
         <div :if={account_scope?(@current_scope)} class="dropdown dropdown-end">

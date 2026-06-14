@@ -103,3 +103,123 @@
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
 /* This file is for your main application CSS */
+
+/* ─────────────────────────────  Landing page  ─────────────────────────────
+   Self-contained editorial "night-watch" aesthetic for the logged-out marketing
+   page. Scoped under .argus-landing so none of it leaks into the app UI, and it
+   renders identically regardless of the active daisyUI theme. */
+.argus-landing {
+  --night: #070a14;
+  --night-2: #0d1224;
+  --line: #1d2640;
+  --slate: #98a1ba;
+  --paper: #f4f1e9;
+  --amber: #f5a524;
+  --amber-soft: #ffd06b;
+  --watch: #6aa6ff;
+  background: var(--night);
+  color: #eaedf6;
+  font-feature-settings: "ss01";
+}
+
+.argus-landing .font-display {
+  font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  letter-spacing: -0.025em;
+  font-weight: 600;
+}
+
+.argus-hero {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(115% 120% at 82% -15%, rgba(245, 165, 36, 0.20), transparent 48%),
+    radial-gradient(90% 95% at 8% -5%, rgba(106, 166, 255, 0.18), transparent 52%),
+    linear-gradient(180deg, var(--night) 0%, var(--night-2) 100%);
+}
+
+/* Faint topographic grid + film grain for depth */
+.argus-grid::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(120% 90% at 50% 0%, #000 35%, transparent 78%);
+}
+
+.argus-grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.045;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* The watching eye — concentric radar rings */
+@keyframes argus-ring {
+  0%   { transform: scale(0.45); opacity: 0.65; }
+  100% { transform: scale(1.9); opacity: 0; }
+}
+.argus-ring {
+  transform-origin: center;
+  animation: argus-ring 4.5s ease-out infinite;
+}
+
+@keyframes argus-sweep {
+  to { transform: rotate(360deg); }
+}
+.argus-sweep {
+  animation: argus-sweep 7s linear infinite;
+  transform-origin: center;
+}
+
+@keyframes argus-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-12px); }
+}
+.argus-float { animation: argus-float 7s ease-in-out infinite; }
+
+/* Staggered page-load reveal */
+@keyframes argus-rise {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: none; }
+}
+.argus-reveal {
+  opacity: 0;
+  animation: argus-rise 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+
+.argus-underline {
+  background-image: linear-gradient(var(--amber), var(--amber));
+  background-size: 0% 2px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  transition: background-size 0.3s ease;
+}
+.argus-underline:hover { background-size: 100% 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .argus-ring, .argus-sweep, .argus-float, .argus-reveal {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* Scoped, collision-free palette helpers used by the landing markup */
+.argus-landing .c-amber { color: var(--amber); }
+.argus-landing .c-watch { color: var(--watch); }
+.argus-landing .c-slate { color: var(--slate); }
+.argus-landing .c-dim   { color: rgba(234, 237, 246, 0.72); }
+.argus-landing .c-night { color: var(--night); }
+.argus-landing .bg-ink2 { background: var(--night-2); }
+.argus-landing .bg-glass { background: rgba(255, 255, 255, 0.035); }
+.argus-landing .bg-amber { background: var(--amber); }
+.argus-landing .bg-paper { background: var(--paper); }
+.argus-landing .b-line  { border-color: var(--line); }
+.argus-landing .b-amber { border-color: rgba(245, 165, 36, 0.45); }

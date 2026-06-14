@@ -3,7 +3,14 @@ defmodule ArgusWeb.PageControllerTest do
 
   test "GET / shows the marketing page when logged out", %{conn: conn} do
     conn = get(conn, ~p"/")
-    assert html_response(conn, 200) =~ "Peace of mind from prototype to production"
+    html = html_response(conn, 200)
+
+    assert html =~ "Never miss a"
+    assert html =~ "deadline"
+    assert html =~ "Start tracking free"
+    assert html =~ "A vigilance layer over every obligation"
+    assert html =~ ~p"/users/register"
+    assert html =~ ~p"/users/log-in"
   end
 
   test "GET / redirects a logged-in user to their workspace", %{conn: conn} do
