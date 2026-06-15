@@ -18,11 +18,13 @@ defmodule ArgusWeb.MembershipLiveTest do
     assert has_element?(view, "#members-list")
     assert has_element?(view, "#invite-form")
 
-    view
-    |> form("#invite-form", %{"invite" => %{"email" => "new@example.com", "role" => "member"}})
-    |> render_submit()
+    html =
+      view
+      |> form("#invite-form", %{"invite" => %{"email" => "new@example.com", "role" => "member"}})
+      |> render_submit()
 
     assert has_element?(view, "#pending-invitations", "new@example.com")
+    assert html =~ "Invitation sent to new@example.com"
   end
 
   test "admin can change a member's role", %{conn: conn} do
@@ -63,5 +65,18 @@ defmodule ArgusWeb.MembershipLiveTest do
     {:ok, view, _html} = live(conn, ~p"/entities/#{manager.entity.slug}/members")
 
     refute has_element?(view, "#invite-form")
+  end
+
+  test "admin can create an email-less invite and see the shareable link", %{conn: conn} do
+    scope = Argus.EntitiesFixtures.entity_scope_fixture()
+    conn = log_in_user(conn, scope.user)
+
+    {:ok, view, _html} = live(conn, ~p"/entities/#{scope.entity.slug}/members")
+
+    view
+    |> form("#invite-form", %{"invite" => %{"email" => "", "role" => "member"}})
+    |> render_submit()
+
+    assert has_element?(view, "#invite-link a[href*='/invitations/']")
   end
 end

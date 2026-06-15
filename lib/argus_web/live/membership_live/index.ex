@@ -67,13 +67,17 @@ defmodule ArgusWeb.MembershipLive.Index do
             <.input
               field={@invite_form[:email]}
               type="email"
-              label="Email"
-              required
+              label="Email (optional)"
               class="input w-72"
             />
             <.input field={@invite_form[:role]} type="select" label="Role" options={roles()} />
             <.button class="btn btn-primary btn-sm" phx-disable-with="Inviting…">Send invite</.button>
           </.form>
+          <div :if={@last_invite_link} class="alert alert-info mt-2" id="invite-link">
+            <a href={@last_invite_link} target="_blank" rel="noopener" class="link break-all">
+              {@last_invite_link}
+            </a>
+          </div>
         </section>
 
         <section :if={@can_manage? and @pending != []} class="mt-8">
@@ -119,6 +123,7 @@ defmodule ArgusWeb.MembershipLive.Index do
      socket
      |> assign(:can_manage?, Authorization.can?(socket.assigns.current_scope, :manage_entity))
      |> assign(:invite_form, to_form(%{"email" => "", "role" => "member"}, as: :invite))
+     |> assign(:last_invite_link, nil)
      |> load_members()}
   end
 
@@ -129,7 +134,8 @@ defmodule ArgusWeb.MembershipLive.Index do
 
     case Entities.update_member_role(scope, membership, role) do
       {:ok, _} ->
-        {:noreply, socket |> put_flash(:info, "Role updated.") |> load_members()}
+        {:noreply,
+         socket |> put_flash(:info, "Role updated.") |> assign(:last_invite_link, nil) |> load_members()}
 
       :not_authorise ->
         {:noreply, put_flash(socket, :error, "Not authorized.")}
@@ -144,7 +150,11 @@ defmodule ArgusWeb.MembershipLive.Index do
 
     case Entities.revoke_invitation(scope, invitation_id) do
       {:ok, _} ->
-        {:noreply, socket |> put_flash(:info, "Invitation revoked.") |> load_members()}
+        {:noreply,
+         socket
+         |> put_flash(:info, "Invitation revoked.")
+         |> assign(:last_invite_link, nil)
+         |> load_members()}
 
       :not_authorise ->
         {:noreply, put_flash(socket, :error, "Not authorized.")}
@@ -157,12 +167,17 @@ defmodule ArgusWeb.MembershipLive.Index do
   def handle_event("invite", %{"invite" => %{"email" => email, "role" => role}}, socket) do
     scope = socket.assigns.current_scope
 
-    case Entities.invite_member(scope, email, role) do
-      {:ok, _invitation} ->
+    url_fun = fn encoded -> url(~p"/invitations/#{encoded}") end
+
+    case Entities.invite_member(scope, email, role, url_fun) do
+      {:ok, invitation} ->
+        link = url(~p"/invitations/#{Argus.Entities.Invitation.encode_token(invitation.token)}")
+
         {:noreply,
          socket
-         |> put_flash(:info, "Invitation created for #{email}.")
+         |> put_flash(:info, invite_flash(invitation))
          |> assign(:invite_form, to_form(%{"email" => "", "role" => "member"}, as: :invite))
+         |> assign(:last_invite_link, link)
          |> load_members()}
 
       {:error, :seat_limit_reached} ->
@@ -175,6 +190,9 @@ defmodule ArgusWeb.MembershipLive.Index do
         {:noreply, put_flash(socket, :error, "Check the email address and try again.")}
     end
   end
+
+  defp invite_flash(%{email: nil}), do: "Invitation created. Share the link below."
+  defp invite_flash(%{email: email}), do: "Invitation sent to #{email}."
 
   defp load_members(socket) do
     entity = socket.assigns.current_scope.entity
