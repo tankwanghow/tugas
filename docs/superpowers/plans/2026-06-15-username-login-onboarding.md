@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let admins invite managers/members by email **or** QR; the invitee sets a username + password on first access and logs back in with username-or-email + password.
+**Goal:** Let admins invite managers/members by single-use email **or** a reusable, admin-supervised QR session; the invitee sets a username + password on first access and logs back in with username-or-email + password.
 
-**Architecture:** Add a globally-unique `username` identifier to `users` (email relaxed to nullable, "at least one identifier" check constraint). Invitations no longer carry identity — their email is delivery-only and becomes optional. The accept page (`GET /invitations/:token`) renders only; a `POST .../accept` controller handles three paths (already-logged-in one-click, create-account, log-in-to-accept). Password login resolves the typed handle against email then username.
+**Architecture:** Add a globally-unique `username` identifier to `users` (email relaxed to nullable, "at least one identifier" check constraint). Invitations no longer carry identity — their email is delivery-only and optional. Invitations come in two shapes: single-use email (consumed via `accepted_at`) and reusable QR sessions (`reusable=true`, ended by `closed_at` or a 30-min `expires_at`). The accept page (`GET /invitations/:token`) renders only; a `POST .../accept` controller handles three paths (one-click, create-account, log-in-to-accept). An admin invite-session LiveView shows a QR (`eqrcode`) and streams joiners live via PubSub. Password login resolves the typed handle against email then username.
 
 **Tech Stack:** Elixir/Phoenix 1.8, LiveView 1.2, Ecto 3.13, PostgreSQL citext, Bcrypt, daisyUI.
 
@@ -23,6 +23,9 @@
 - **`lib/argus_web/live/invitation_live/show.ex`** — render branches + forms (plain action POST, no phx-submit).
 - **`lib/argus_web/live/user_live/login.ex`** + **`lib/argus_web/controllers/user_session_controller.ex`** — password login accepts username-or-email.
 - **`test/support/fixtures/accounts_fixtures.ex`** — `unique_username/0`, `username_user_fixture/1`.
+- **`lib/argus/entities/invitation.ex` / `entities.ex`** — `reusable`/`closed_at` + `open_invite_session/2`, `close_invite_session/2`; non-consuming reusable accept + `{:member_joined, _}` PubSub.
+- **`lib/argus_web/qr.ex`** — inline SVG QR helper (`eqrcode` dep).
+- **`lib/argus_web/live/membership_live/invite_session.ex`** — admin QR session view (QR + live roster + Close).
 - Test files mirror each module.
 
 > **Note for the worker:** this branch already carries uncommitted invitation work (the email-auto-register version). Several tasks **rewrite** those existing files rather than create them.
@@ -58,6 +61,8 @@ defmodule Argus.Repo.Migrations.AddUsernameRelaxIdentity do
 
     alter table(:entity_invitations) do
       modify :email, :citext, null: true, from: {:citext, null: false}
+      add :reusable, :boolean, null: false, default: false
+      add :closed_at, :utc_datetime
     end
 
     drop unique_index(:entity_invitations, [:entity_id, :email],
@@ -410,15 +415,22 @@ Add to `test/argus/entities_test.exs` (inside an appropriate describe, e.g. a ne
 Run: `mix test test/argus/entities_test.exs`
 Expected: FAIL — the invitation changeset still requires `email`.
 
-- [ ] **Step 3: Relax the invitation changeset**
+- [ ] **Step 3: Add the new fields to the schema, then relax the changeset**
 
-In `lib/argus/entities/invitation.ex`, replace `changeset/2` with:
+In `lib/argus/entities/invitation.ex`, add these two fields to `schema "entity_invitations" do` (after `:accepted_at`):
+
+```elixir
+    field :reusable, :boolean, default: false
+    field :closed_at, :utc_datetime
+```
+
+Then replace `changeset/2` with:
 
 ```elixir
   @doc false
   def changeset(invitation, attrs) do
     invitation
-    |> cast(attrs, [:email, :role, :token, :expires_at, :accepted_at])
+    |> cast(attrs, [:email, :role, :token, :expires_at, :accepted_at, :reusable, :closed_at])
     |> validate_required([:role, :token, :expires_at])
     |> validate_inclusion(:role, @roles)
     |> maybe_validate_email_format()
@@ -1018,7 +1030,534 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ---
 
-## Task 9: Full suite + precommit
+## Task 9: Reusable-session validity + non-consuming accept
+
+**Files:**
+- Modify: `lib/argus/entities.ex` (`fetch_pending_invitation`, `accept_invitation_multi`)
+- Modify: `lib/argus/entities/membership.ex` (add unique_constraint)
+- Test: `test/argus/entities_test.exs`
+
+> Confirm the PubSub name first: `grep -n "PubSub" lib/argus/application.ex` (used in Task 10). Likely `Argus.PubSub`.
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `test/argus/entities_test.exs`:
+
+```elixir
+  describe "reusable invite sessions" do
+    alias Argus.Accounts
+    import Argus.AccountsFixtures
+
+    defp open_session(role \\ "member") do
+      admin = Argus.EntitiesFixtures.entity_scope_fixture()
+      {:ok, inv} = Entities.open_invite_session(admin, role)
+      %{admin: admin, inv: inv}
+    end
+
+    test "two different users can accept the same reusable token" do
+      %{admin: admin, inv: inv} = open_session()
+      u1 = username_user_fixture()
+      u2 = username_user_fixture()
+
+      assert {:ok, m1} = Entities.accept_invitation(u1, inv.token)
+      assert m1.role == "member"
+      assert {:ok, _m2} = Entities.accept_invitation(u2, inv.token)
+
+      # token is still live (not consumed)
+      assert {:ok, _} = Entities.get_invitation_by_encoded_token(Argus.Entities.Invitation.encode_token(inv.token))
+      assert Entities.list_entity_members(admin.entity) |> length() == 3
+    end
+
+    test "a re-accept by an existing member is a no-op success" do
+      %{inv: inv} = open_session()
+      u1 = username_user_fixture()
+      {:ok, _} = Entities.accept_invitation(u1, inv.token)
+      assert {:ok, :already_member} = Entities.accept_invitation(u1, inv.token)
+    end
+
+    test "a closed session rejects new accepts" do
+      %{admin: admin, inv: inv} = open_session()
+      {:ok, _} = Entities.close_invite_session(admin, inv.id)
+      u = username_user_fixture()
+      assert {:error, :closed} = Entities.accept_invitation(u, inv.token)
+    end
+  end
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `mix test test/argus/entities_test.exs`
+Expected: FAIL — `open_invite_session/2`, `close_invite_session/2` undefined; second accept consumes/duplicates.
+
+- [ ] **Step 3: Add a unique_constraint to the membership changeset**
+
+In `lib/argus/entities/membership.ex`, in `changeset/2`, after the existing validations add:
+
+```elixir
+    |> unique_constraint([:user_id, :entity_id])
+```
+
+- [ ] **Step 4: Branch `fetch_pending_invitation` and `accept_invitation_multi` on `reusable`**
+
+In `lib/argus/entities.ex`, replace `fetch_pending_invitation/1` with:
+
+```elixir
+  defp fetch_pending_invitation(token) do
+    case Repo.get_by(Invitation, token: token) do
+      %Invitation{} = invitation -> validate_invitation_live(invitation)
+      nil -> {:error, :not_found}
+    end
+  end
+
+  defp validate_invitation_live(%Invitation{reusable: true} = inv) do
+    cond do
+      not is_nil(inv.closed_at) -> {:error, :closed}
+      invitation_expired?(inv) -> {:error, :expired}
+      true -> {:ok, Repo.preload(inv, :entity)}
+    end
+  end
+
+  defp validate_invitation_live(%Invitation{reusable: false} = inv) do
+    cond do
+      not is_nil(inv.accepted_at) -> {:error, :already_accepted}
+      invitation_expired?(inv) -> {:error, :expired}
+      true -> {:ok, Repo.preload(inv, :entity)}
+    end
+  end
+
+  defp invitation_expired?(%Invitation{expires_at: ea}) do
+    DateTime.compare(DateTime.utc_now(:second), ea) != :lt
+  end
+```
+
+Then replace `accept_invitation_multi/2` with:
+
+```elixir
+  defp accept_invitation_multi(user, %Invitation{} = invitation) do
+    now = DateTime.utc_now(:second)
+
+    multi =
+      Ecto.Multi.new()
+      |> Ecto.Multi.insert(:membership, fn _ ->
+        %Membership{
+          user_id: user.id,
+          entity_id: invitation.entity_id,
+          role: invitation.role,
+          invited_by_id: invitation.invited_by_id,
+          accepted_at: now,
+          is_default: first_entity_for_user?(user)
+        }
+        |> Membership.changeset(%{})
+      end)
+
+    multi =
+      if invitation.reusable do
+        multi
+      else
+        Ecto.Multi.update(multi, :invitation, Invitation.changeset(invitation, %{accepted_at: now}))
+      end
+
+    multi
+    |> Repo.transaction()
+    |> case do
+      {:ok, %{membership: membership}} ->
+        membership = Repo.preload(membership, :user)
+
+        Phoenix.PubSub.broadcast(
+          Argus.PubSub,
+          "entity:#{invitation.entity_id}:members",
+          {:member_joined, membership}
+        )
+
+        {:ok, membership}
+
+      {:error, :membership, %Ecto.Changeset{} = changeset, _} ->
+        if Enum.any?(changeset.errors, fn {_f, {_m, opts}} -> opts[:constraint] == :unique end) do
+          {:ok, :already_member}
+        else
+          {:error, changeset}
+        end
+
+      {:error, :invitation, changeset, _} ->
+        {:error, changeset}
+    end
+  end
+```
+
+- [ ] **Step 5: Add `open_invite_session/2` and `close_invite_session/2`**
+
+In `lib/argus/entities.ex`, add (near `invite_member/4`):
+
+```elixir
+  @doc """
+  Opens a reusable, admin-supervised invite session for `role` ("manager" or
+  "member"). Auto-expires 30 minutes from now; close early with
+  `close_invite_session/2`.
+  """
+  def open_invite_session(%Scope{user: inviter, entity: entity} = scope, role) do
+    cond do
+      not Authorization.can?(scope, :manage_entity) ->
+        :not_authorise
+
+      role not in ["manager", "member"] ->
+        {:error, :invalid_role}
+
+      true ->
+        token = :crypto.strong_rand_bytes(32)
+        expires_at = DateTime.add(DateTime.utc_now(:second), 30 * 60, :second)
+
+        %Invitation{entity_id: entity.id, invited_by_id: inviter.id}
+        |> Invitation.changeset(%{
+          role: role,
+          token: token,
+          expires_at: expires_at,
+          reusable: true
+        })
+        |> Repo.insert()
+    end
+  end
+
+  @doc """
+  Closes a reusable invite session (admin-only). Stamps `closed_at`.
+  """
+  def close_invite_session(%Scope{} = scope, invitation_id) do
+    if Authorization.can?(scope, :manage_entity) do
+      case Repo.get_by(Invitation, id: invitation_id, entity_id: scope.entity.id, reusable: true) do
+        nil ->
+          {:error, :not_found}
+
+        invitation ->
+          invitation
+          |> Invitation.changeset(%{closed_at: DateTime.utc_now(:second)})
+          |> Repo.update()
+      end
+    else
+      :not_authorise
+    end
+  end
+```
+
+- [ ] **Step 6: Run it to verify it passes**
+
+Run: `mix test test/argus/entities_test.exs`
+Expected: PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add lib/argus/entities.ex lib/argus/entities/membership.ex test/argus/entities_test.exs
+git commit -m "feat: reusable invite sessions (open/close, non-consuming accept)
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 10: QR rendering helper
+
+**Files:**
+- Modify: `mix.exs` (add `eqrcode`)
+- Create: `lib/argus_web/qr.ex`
+- Test: `test/argus_web/qr_test.exs`
+
+- [ ] **Step 1: Add the dependency**
+
+In `mix.exs`, add to `deps/0`:
+
+```elixir
+      {:eqrcode, "~> 0.2"},
+```
+
+Run: `mix deps.get`
+Expected: fetches `eqrcode`.
+
+- [ ] **Step 2: Write the failing test**
+
+Create `test/argus_web/qr_test.exs`:
+
+```elixir
+defmodule ArgusWeb.QRTest do
+  use ExUnit.Case, async: true
+
+  test "svg/1 returns an inline SVG string for a URL" do
+    svg = ArgusWeb.QR.svg("https://example.com/invitations/abc")
+    assert is_binary(svg)
+    assert svg =~ "<svg"
+  end
+end
+```
+
+- [ ] **Step 3: Run it to verify it fails**
+
+Run: `mix test test/argus_web/qr_test.exs`
+Expected: FAIL — `ArgusWeb.QR` undefined.
+
+- [ ] **Step 4: Implement the helper**
+
+Create `lib/argus_web/qr.ex`:
+
+```elixir
+defmodule ArgusWeb.QR do
+  @moduledoc "Renders a URL as an inline SVG QR code."
+
+  @doc "Returns an SVG string (no XML declaration) for embedding with `raw/1`."
+  def svg(url, opts \\ []) when is_binary(url) do
+    width = Keyword.get(opts, :width, 240)
+
+    url
+    |> EQRCode.encode()
+    |> EQRCode.svg(width: width, viewbox: true)
+  end
+end
+```
+
+- [ ] **Step 5: Run it to verify it passes**
+
+Run: `mix test test/argus_web/qr_test.exs`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add mix.exs mix.lock lib/argus_web/qr.ex test/argus_web/qr_test.exs
+git commit -m "feat: inline SVG QR code helper
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 11: Admin invite-session LiveView (QR + live roster + close)
+
+**Files:**
+- Create: `lib/argus_web/live/membership_live/invite_session.ex`
+- Modify: `lib/argus_web/router.ex` (add route in the `:entity_scoped` live_session)
+- Test: `test/argus_web/live/invite_session_live_test.exs`
+
+- [ ] **Step 1: Add the route**
+
+In `lib/argus_web/router.ex`, inside `live_session :entity_scoped ... do`, after the `members` line add:
+
+```elixir
+      live "/entities/:entity_slug/invite-session/:role", MembershipLive.InviteSession, :show
+```
+
+- [ ] **Step 2: Write the failing test**
+
+Create `test/argus_web/live/invite_session_live_test.exs`:
+
+```elixir
+defmodule ArgusWeb.InviteSessionLiveTest do
+  use ArgusWeb.ConnCase, async: true
+
+  import Phoenix.LiveViewTest
+  import Argus.AccountsFixtures
+
+  alias Argus.Entities
+
+  test "admin opens a member session: sees QR and a live roster updates", %{conn: conn} do
+    scope = Argus.EntitiesFixtures.entity_scope_fixture()
+    conn = log_in_user(conn, scope.user)
+
+    {:ok, view, html} = live(conn, ~p"/entities/#{scope.entity.slug}/invite-session/member")
+
+    assert html =~ "<svg"
+    assert html =~ "/invitations/"
+
+    # Simulate a scanner finishing registration in another process.
+    joiner = username_user_fixture(%{username: "scannerjoe"})
+    inv = Argus.Repo.get_by!(Entities.Invitation, entity_id: scope.entity.id, reusable: true)
+    {:ok, _} = Entities.accept_invitation(joiner, inv.token)
+
+    assert render(view) =~ "scannerjoe"
+  end
+
+  test "a non-admin cannot open a session", %{conn: conn} do
+    member = member_scope_fixture()
+    conn = log_in_user(conn, member.user)
+
+    assert {:error, {:redirect, _}} =
+             live(conn, ~p"/entities/#{member.entity.slug}/invite-session/member")
+  end
+end
+```
+
+- [ ] **Step 3: Run it to verify it fails**
+
+Run: `mix test test/argus_web/live/invite_session_live_test.exs`
+Expected: FAIL — `MembershipLive.InviteSession` undefined.
+
+- [ ] **Step 4: Implement the LiveView**
+
+Create `lib/argus_web/live/membership_live/invite_session.ex`:
+
+```elixir
+defmodule ArgusWeb.MembershipLive.InviteSession do
+  use ArgusWeb, :live_view
+
+  alias Argus.Entities
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <Layouts.app flash={@flash} current_scope={@current_scope}>
+      <div class="mx-auto max-w-md text-center">
+        <.header>
+          Invite {@role}s
+          <:subtitle>Scan to join {@current_scope.entity.name}. Closes automatically in 30 min.</:subtitle>
+        </.header>
+
+        <%= if @closed do %>
+          <p class="alert alert-info mt-6">Session closed.</p>
+          <.link navigate={~p"/entities/#{@current_scope.entity.slug}/members"} class="btn mt-4">
+            Back to members
+          </.link>
+        <% else %>
+          <div class="mt-6 flex justify-center">{raw(@qr)}</div>
+          <p class="mt-2 break-all text-sm text-base-content/70">{@link}</p>
+
+          <button phx-click="close" class="btn btn-error btn-soft mt-4" phx-disable-with="Closing...">
+            Close session
+          </button>
+
+          <div class="mt-8 text-left">
+            <p class="font-semibold">Joined so far ({@count})</p>
+            <ul id="roster" phx-update="stream" class="mt-2 space-y-1">
+              <li :for={{id, m} <- @streams.roster} id={id} class="badge badge-soft">
+                {m.user.username || m.user.email}
+              </li>
+            </ul>
+          </div>
+        <% end %>
+      </div>
+    </Layouts.app>
+    """
+  end
+
+  @impl true
+  def mount(%{"role" => role}, _session, socket) do
+    scope = socket.assigns.current_scope
+
+    case Entities.open_invite_session(scope, role) do
+      {:ok, invitation} ->
+        if connected?(socket) do
+          Phoenix.PubSub.subscribe(Argus.PubSub, "entity:#{scope.entity.id}:members")
+        end
+
+        link = url(~p"/invitations/#{Entities.Invitation.encode_token(invitation.token)}")
+
+        {:ok,
+         socket
+         |> assign(role: role, invitation: invitation, link: link, qr: ArgusWeb.QR.svg(link),
+           closed: false, count: 0)
+         |> stream(:roster, [])}
+
+      _ ->
+        {:ok,
+         socket
+         |> put_flash(:error, "You can't open an invite session.")
+         |> push_navigate(to: ~p"/entities/#{scope.entity.slug}/members")}
+    end
+  end
+
+  @impl true
+  def handle_event("close", _params, socket) do
+    Entities.close_invite_session(socket.assigns.current_scope, socket.assigns.invitation.id)
+    {:noreply, assign(socket, :closed, true)}
+  end
+
+  @impl true
+  def handle_info({:member_joined, membership}, socket) do
+    {:noreply,
+     socket
+     |> stream_insert(:roster, membership, at: 0)
+     |> update(:count, &(&1 + 1))}
+  end
+end
+```
+
+> `:require_authenticated` + `:require_entity` on-mounts already guard the route; `open_invite_session/2` enforces `:manage_entity`, so a non-admin is redirected (the test asserts the redirect).
+
+- [ ] **Step 5: Run it to verify it passes**
+
+Run: `mix test test/argus_web/live/invite_session_live_test.exs`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add lib/argus_web/live/membership_live/invite_session.ex lib/argus_web/router.ex test/argus_web/live/invite_session_live_test.exs
+git commit -m "feat: admin invite-session LiveView with QR and live roster
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 12: Members screen — Start QR invite buttons
+
+**Files:**
+- Modify: `lib/argus_web/live/membership_live/index.ex` (template)
+- Test: `test/argus_web/live/membership_live_test.exs`
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `test/argus_web/live/membership_live_test.exs` (admin describe):
+
+```elixir
+    test "admin sees Start manager/member QR invite links", %{conn: conn} do
+      scope = Argus.EntitiesFixtures.entity_scope_fixture()
+      conn = log_in_user(conn, scope.user)
+      {:ok, _view, html} = live(conn, ~p"/entities/#{scope.entity.slug}/members")
+
+      assert html =~ ~p"/entities/#{scope.entity.slug}/invite-session/manager"
+      assert html =~ ~p"/entities/#{scope.entity.slug}/invite-session/member"
+    end
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `mix test test/argus_web/live/membership_live_test.exs`
+Expected: FAIL — links absent.
+
+- [ ] **Step 3: Add the buttons to the Members template**
+
+In `lib/argus_web/live/membership_live/index.ex`, in the render template near the invite form, add (admin-only — wrap in the existing manage check if there is one):
+
+```heex
+      <div class="mt-4 flex gap-2">
+        <.link
+          navigate={~p"/entities/#{@current_scope.entity.slug}/invite-session/manager"}
+          class="btn btn-outline btn-sm"
+        >
+          <.icon name="hero-qr-code" class="size-4" /> Manager QR
+        </.link>
+        <.link
+          navigate={~p"/entities/#{@current_scope.entity.slug}/invite-session/member"}
+          class="btn btn-outline btn-sm"
+        >
+          <.icon name="hero-qr-code" class="size-4" /> Member QR
+        </.link>
+      </div>
+```
+
+- [ ] **Step 4: Run it to verify it passes**
+
+Run: `mix test test/argus_web/live/membership_live_test.exs`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add lib/argus_web/live/membership_live/index.ex test/argus_web/live/membership_live_test.exs
+git commit -m "feat: Start manager/member QR invite from Members screen
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
+```
+
+---
+
+## Task 13: Full suite + precommit
 
 **Files:** none (verification)
 
@@ -1045,6 +1584,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ## Self-Review notes (for the implementer)
 
-- **Spec coverage:** username field + nullable email + check constraint (T1); registration_changeset (T2); register_invited_user + login resolver (T3); optional invitation email (T4); three accept paths (T5); accept-page branches (T6); username-or-email login (T7); invite UI (T8). All spec sections map to a task.
-- **Type consistency:** controller reads `params["create"]` / `params["login"]`; Show forms use `as: "create"` / `as: "login"` / `as: "accept"`; login uses `user_params["identifier"]` with form field `f[:identifier]` — kept consistent across T5–T7.
-- **Out of scope (do not build):** phone, OTP, self-service reset, passkeys.
+- **Spec coverage:** username + nullable email + check constraint + session columns (T1); registration_changeset (T2); register_invited_user + login resolver (T3); optional invitation email + invitation fields (T4); three accept paths + `{:ok, :already_member}` success (T5); accept-page branches (T6); username-or-email login (T7); email-optional single-use invite UI (T8); reusable-session validity/open/close + non-consuming accept + PubSub (T9); QR helper (T10); admin invite-session LiveView with live roster (T11); Members-screen QR buttons for manager/member (T12); suite+precommit (T13). All spec sections map to a task.
+- **Type consistency:** controller reads `params["create"]` / `params["login"]`; Show forms use `as: "create"` / `as: "login"` / `as: "accept"`; login uses `user_params["identifier"]` with form field `f[:identifier]` (T5–T7). `accept_invitation/2` returns `{:ok, membership}` **or** `{:ok, :already_member}` — both matched by the controller's `{:ok, _}` success clause (T5/T9). Session role is `"manager"`/`"member"` only across T9/T11/T12.
+- **PubSub name:** the plan assumes `Argus.PubSub` — confirm against `lib/argus/application.ex` before T9/T11 and adjust if different.
+- **Out of scope (do not build):** phone, OTP, self-service reset, passkeys, per-user approval gating (sessions are passive), admin-role QR sessions.

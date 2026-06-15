@@ -29,6 +29,19 @@ without an email channel.
 6. **Phone / OTP is explicitly out of scope.** It buys nothing the chosen flow uses and carries a
    normalization dependency + an SMS/WhatsApp cost. `username` is the seam to add phone-OTP later as
    one coherent unit (column + delivery + reset together).
+7. **Two invite shapes:**
+   - **Email invite** = single-use, targeted (one token, consumed on accept) — for inviting a
+     specific person by address.
+   - **QR invite session** = reusable, admin-supervised — the admin opens a session on the Members
+     screen **for a chosen role (manager *or* member)**, the UI shows a QR, multiple people scan and
+     self-register against the **one** token (all joining at that role), each appearing on the
+     admin's screen **live** as they finish, and the admin **closes** the session when done. Role is
+     restricted to `manager`/`member` — **admins are never mass-created via QR**.
+8. **Invite sessions are passive + time-boxed.** A scanned user becomes a member **immediately** on
+   registering (no per-user approval gate — the admin's confirmation is visual: they watch the live
+   roster fill). The session ends on **manual Close** *or* an **auto-expiry 30 minutes** after it
+   opened, whichever comes first. Seat limit is enforced per accept; the `(user_id, entity_id)`
+   unique index keeps a re-scan from double-joining.
 
 ## Data model
 
@@ -46,7 +59,18 @@ without an email channel.
   present; otherwise the admin shows the link/QR). It is **no longer the user's identity** — the
   invitee picks their own username on accept.
 - The "one pending invitation per email" unique constraint must become a **partial index** (only
-  where `email IS NOT NULL`), so multiple email-less (QR) invitations can coexist.
+  where `email IS NOT NULL`), so multiple email-less / reusable invitations can coexist.
+- **Add `reusable :boolean` (default `false`)** — distinguishes a single-use email invite (`false`,
+  consumed via `accepted_at`) from a reusable QR session (`true`, **never** consumed by
+  `accepted_at`).
+- **Add `closed_at :utc_datetime`** (nullable) — set when the admin manually closes a session.
+  `expires_at` carries the 30-minute auto-expiry for sessions (and the existing N-day window for
+  email invites).
+
+**Validity predicates** (used by `fetch_pending_invitation`):
+- *single-use* (`reusable = false`): live while `accepted_at IS NULL AND expires_at > now`.
+- *reusable session* (`reusable = true`): live while `closed_at IS NULL AND expires_at > now`
+  (multiple accepts allowed; not consumed).
 
 ## Schema/changeset changes
 
@@ -77,10 +101,18 @@ without an email channel.
   needs silent email registration).
 
 ### `Argus.Entities`
-- `invite_member/4` — allow a **nil/blank email** (QR invite); only call `UserNotifier` when an
-  email is present. Signature otherwise unchanged.
-- `accept_invitation/2` — **unchanged**; reused by all accept paths to attach the membership
-  (seat-gated) once a `%User{}` exists.
+- `invite_member/4` — allow a **nil/blank email** (single-use, email optional); only call
+  `UserNotifier` when an email is present. Signature otherwise unchanged.
+- `accept_invitation/2` — attaches the membership (seat-gated) for **both** invite shapes. For a
+  reusable session it does **not** stamp `accepted_at`. A re-scan by an existing member hits the
+  `(user_id, entity_id)` unique index → mapped to `{:error, :already_member}` and treated by the
+  controller as a friendly redirect to the dashboard (not an error).
+- **`open_invite_session/2`** `(scope, role)` — admin-only (`:manage_entity`); `role` must be
+  `"manager"` or `"member"` (reject `"admin"` → `{:error, :invalid_role}`); inserts a `reusable`
+  invitation with `expires_at = now + 30 min`, returns it (+ its encoded token for the QR URL).
+- **`close_invite_session/2`** `(scope, invitation_id)` — admin-only; stamps `closed_at = now`.
+- **PubSub:** on every membership insert, broadcast `{:member_joined, membership}` on
+  `"entity:#{entity_id}:members"` so an admin's open session view streams new joiners live.
 
 ## Onboarding / accept flow
 
@@ -99,6 +131,26 @@ All three submit (via `phx-trigger-action`) to **`POST /invitations/:token/accep
 (`InvitationController`), which pattern-matches on the params to pick the path. **GET stays
 side-effect-free** so email/QR-scanner prefetches cannot register or log anyone in. Invalid/expired
 token → flash + redirect home.
+
+## Invite sessions (reusable QR) — admin flow
+
+On the **Members** screen the admin clicks **Start QR invite** (`open_invite_session/2`, role
+defaults to `member`). A dedicated session view then:
+
+1. **Shows the QR** — a server-rendered SVG of `url(~p"/invitations/#{encoded_token}")`, generated
+   with the `eqrcode` dependency (pure Elixir, no JS). The same link is shown as text for sharing.
+2. **Streams the live roster** — the LiveView subscribes to `"entity:#{entity_id}:members"`; each
+   `{:member_joined, membership}` broadcast prepends the new member to a stream, so scanned users
+   appear as they finish registering.
+3. **Close** — a button calls `close_invite_session/2` (stamps `closed_at`); the QR view then shows
+   "Session closed." A **30-minute auto-expiry** (`expires_at`) is the backstop: once passed,
+   `fetch_pending_invitation` rejects the token even if the admin never clicked Close.
+
+The accept page/controller for a session token is the **same** as for any invite (create-account /
+log-in / one-click) — the only difference is the token is reusable and not consumed.
+
+**Authorization:** open/close are `:manage_entity` (admin). The session view route lives in the
+entity-scoped `live_session`.
 
 ## Login changes
 
@@ -128,6 +180,11 @@ on-mounts, or Desktop/Mobile routing. This is purely an identity/onboarding chan
   bad password, returns nil on unknown handle.
 - **Entities:** `invite_member/4` succeeds with nil email (no `UserNotifier` call); still emails
   when email present.
+- **Invite sessions:** `open_invite_session/2` is admin-only and sets `reusable=true` +
+  `expires_at ≈ now+30min`; `close_invite_session/2` stamps `closed_at` (admin-only); a reusable
+  token accepts **twice** (two different users both become members, token still live) and is
+  **not** consumed; a re-scan by an existing member yields `{:error, :already_member}`; a closed or
+  expired session rejects new accepts; `{:member_joined, _}` is broadcast on the entity topic.
 - **InvitationController** (`POST .../accept`): create-account path (registers, confirms, joins,
   logs in, redirects); log-in-to-accept path (existing user joins, logs in); already-logged-in
   one-click; invalid token redirects home without a session.
