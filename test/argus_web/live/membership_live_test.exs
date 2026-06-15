@@ -67,6 +67,15 @@ defmodule ArgusWeb.MembershipLiveTest do
     refute has_element?(view, "#invite-form")
   end
 
+  test "admin sees Start manager/member QR invite links", %{conn: conn} do
+    scope = Argus.EntitiesFixtures.entity_scope_fixture()
+    conn = log_in_user(conn, scope.user)
+    {:ok, _view, html} = live(conn, ~p"/entities/#{scope.entity.slug}/members")
+
+    assert html =~ ~p"/entities/#{scope.entity.slug}/invite-session/manager"
+    assert html =~ ~p"/entities/#{scope.entity.slug}/invite-session/member"
+  end
+
   test "admin can create an email-less invite and see the shareable link", %{conn: conn} do
     scope = Argus.EntitiesFixtures.entity_scope_fixture()
     conn = log_in_user(conn, scope.user)

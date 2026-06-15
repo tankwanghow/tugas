@@ -78,6 +78,20 @@ defmodule ArgusWeb.MembershipLive.Index do
               {@last_invite_link}
             </a>
           </div>
+          <div class="mt-4 flex gap-2">
+            <.link
+              navigate={~p"/entities/#{@current_scope.entity.slug}/invite-session/manager"}
+              class="btn btn-outline btn-sm"
+            >
+              <.icon name="hero-qr-code" class="size-4" /> Manager QR
+            </.link>
+            <.link
+              navigate={~p"/entities/#{@current_scope.entity.slug}/invite-session/member"}
+              class="btn btn-outline btn-sm"
+            >
+              <.icon name="hero-qr-code" class="size-4" /> Member QR
+            </.link>
+          </div>
         </section>
 
         <section :if={@can_manage? and @pending != []} class="mt-8">
@@ -135,7 +149,10 @@ defmodule ArgusWeb.MembershipLive.Index do
     case Entities.update_member_role(scope, membership, role) do
       {:ok, _} ->
         {:noreply,
-         socket |> put_flash(:info, "Role updated.") |> assign(:last_invite_link, nil) |> load_members()}
+         socket
+         |> put_flash(:info, "Role updated.")
+         |> assign(:last_invite_link, nil)
+         |> load_members()}
 
       :not_authorise ->
         {:noreply, put_flash(socket, :error, "Not authorized.")}
