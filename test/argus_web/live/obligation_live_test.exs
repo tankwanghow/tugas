@@ -1019,6 +1019,49 @@ defmodule ArgusWeb.ObligationLiveTest do
     assert has_element?(view, "#step-files-#{open_event.id}", "r.pdf")
   end
 
+  test "manager marks a completed cycle in error and is taken to the replacement", %{conn: conn} do
+    manager = Argus.EntitiesFixtures.manager_scope_fixture()
+    conn = log_in_user(conn, manager.user)
+    type = type_fixture(manager.entity)
+
+    {:ok, obligation} =
+      Obligations.create_obligation(manager, %{
+        title: "EPF Jan",
+        obligation_type_id: type.id,
+        primary_assignee_id: manager.user.id,
+        due_by: ~D[2026-06-15],
+        open_note: "open"
+      })
+
+    {:ok, done, _} = Obligations.complete(manager, obligation, %{note: "Done"})
+
+    {:ok, view, _html} =
+      live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{done.id}")
+
+    assert has_element?(view, "#mark-error-btn")
+
+    view |> element("#mark-error-btn") |> render_click()
+    assert has_element?(view, "#correct-modal")
+
+    view
+    |> form("#correct-form", %{"correct" => %{"reason" => "Wrong figures"}})
+    |> render_submit()
+
+    {path, _flash} = assert_redirect(view)
+    replacement_id = path |> String.split("/") |> List.last()
+    refute replacement_id == done.id
+
+    # Original now shows the completed-in-error banner; replacement shows the replaces banner.
+    {:ok, original_view, _} =
+      live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{done.id}")
+
+    assert has_element?(original_view, "#completed-in-error-banner")
+    refute has_element?(original_view, "#mark-error-btn")
+
+    {:ok, replacement_view, _} = live(conn, path)
+    assert has_element?(replacement_view, "#replaces-banner")
+  end
+
   defp upload_fixture(filename, content \\ "hello") do
     path = Path.join(System.tmp_dir!(), "#{System.unique_integer()}_#{filename}")
     File.write!(path, content)

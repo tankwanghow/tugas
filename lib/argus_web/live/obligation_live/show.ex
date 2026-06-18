@@ -175,6 +175,49 @@ defmodule ArgusWeb.ObligationLive.Show do
               </button>
             </div>
           </div>
+
+          <div
+            :if={@obligation.completed_in_error_at}
+            id="completed-in-error-banner"
+            class="mt-3 rounded-box border border-warning/40 bg-warning/10 px-3 py-2 text-sm flex flex-wrap items-center gap-2"
+          >
+            <.icon name="hero-exclamation-triangle-mini" class="size-4 text-warning shrink-0" />
+            <span class="font-medium">Completed in error.</span>
+            <span class="text-base-content/70">{@obligation.completed_in_error_reason}</span>
+            <.link
+              :if={@obligation.replaced_by_id}
+              navigate={~p"/entities/#{@current_scope.entity.slug}/obligations/#{@obligation.replaced_by_id}"}
+              class="link link-primary ml-auto"
+            >
+              View replacement
+            </.link>
+          </div>
+
+          <div
+            :if={@obligation.replaces_id}
+            id="replaces-banner"
+            class="mt-3 rounded-box border border-base-300 bg-base-200/40 px-3 py-2 text-sm flex flex-wrap items-center gap-2"
+          >
+            <.icon name="hero-arrow-uturn-left-mini" class="size-4 text-base-content/50 shrink-0" />
+            <span class="text-base-content/70">Replacement for a cycle completed in error.</span>
+            <.link
+              navigate={~p"/entities/#{@current_scope.entity.slug}/obligations/#{@obligation.replaces_id}"}
+              class="link link-primary ml-auto"
+            >
+              View original
+            </.link>
+          </div>
+
+          <div :if={@correctable?} class="mt-3 pt-3 border-t border-base-300">
+            <button
+              id="mark-error-btn"
+              type="button"
+              phx-click="open_correct_modal"
+              class="btn btn-outline btn-warning btn-sm gap-1"
+            >
+              <.icon name="hero-exclamation-triangle-mini" class="size-3.5" /> Mark completed in error
+            </button>
+          </div>
         </section>
 
         <section class="argus-section">
@@ -391,6 +434,40 @@ defmodule ArgusWeb.ObligationLive.Show do
         </form>
       </div>
 
+      <div :if={@show_correct_modal} id="correct-modal" class="modal modal-open">
+        <div class="modal-box">
+          <h3 class="font-bold text-lg">Mark completed in error</h3>
+          <p class="text-sm text-base-content/60 mt-1">
+            This keeps the completed cycle for audit and creates a fresh one-off replacement
+            to redo the work. A recurring series is not affected.
+          </p>
+          <.form for={%{}} id="correct-form" phx-submit="confirm_correct" class="mt-4 space-y-3">
+            <.input
+              name="correct[reason]"
+              value=""
+              type="textarea"
+              label="Reason (required)"
+              required
+            />
+            <.input
+              name="correct[replacement_due_by]"
+              value={Date.to_iso8601(@obligation.due_by)}
+              type="date"
+              label="Replacement due date"
+            />
+            <div class="modal-action">
+              <button type="button" class="btn" phx-click="close_correct_modal">Cancel</button>
+              <.button class="btn btn-warning" phx-disable-with="Working…">
+                Mark in error &amp; create replacement
+              </.button>
+            </div>
+          </.form>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+          <button type="button" phx-click="close_correct_modal">close</button>
+        </form>
+      </div>
+
       <div
         :if={@step_files_modal_event}
         id={"step-files-modal-#{@step_files_modal_event.id}"}
@@ -592,6 +669,7 @@ defmodule ArgusWeb.ObligationLive.Show do
      |> assign(:show_end_series_modal, false)
      |> assign(:show_edit_modal, false)
      |> assign(:show_completion_modal, false)
+     |> assign(:show_correct_modal, false)
      |> assign(:step_files_modal_event_id, nil)
      |> assign(:step_files_modal_event, nil)
      |> assign(:upload_slot_target, nil)
@@ -1088,6 +1166,49 @@ defmodule ArgusWeb.ObligationLive.Show do
     end
   end
 
+  def handle_event("open_correct_modal", _params, socket) do
+    {:noreply, assign(socket, :show_correct_modal, true)}
+  end
+
+  def handle_event("close_correct_modal", _params, socket) do
+    {:noreply, assign(socket, :show_correct_modal, false)}
+  end
+
+  def handle_event("confirm_correct", %{"correct" => params}, socket) do
+    scope = socket.assigns.current_scope
+    obligation = socket.assigns.obligation
+
+    attrs = %{
+      reason: params["reason"],
+      replacement_due_by: params["replacement_due_by"]
+    }
+
+    case Obligations.mark_completed_in_error(scope, obligation, attrs) do
+      {:ok, _original, replacement} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Cycle marked in error. Replacement created.")
+         |> push_navigate(
+           to: ~p"/entities/#{scope.entity.slug}/obligations/#{replacement.id}"
+         )}
+
+      :not_authorise ->
+        {:noreply, put_flash(socket, :error, "Not authorized.")}
+
+      {:error, :note_required} ->
+        {:noreply, put_flash(socket, :error, "A reason is required.")}
+
+      {:error, reason} when reason in [:not_correctable, :already_corrected] ->
+        {:noreply,
+         socket
+         |> assign(:show_correct_modal, false)
+         |> put_flash(:error, "This cycle can no longer be corrected.")}
+
+      {:error, _} ->
+        {:noreply, put_flash(socket, :error, "Could not mark in error.")}
+    end
+  end
+
   defp cycle_documents(obligation) do
     Enum.flat_map(obligation.events, & &1.documents)
   end
@@ -1140,6 +1261,12 @@ defmodule ArgusWeb.ObligationLive.Show do
     |> assign(:void_reason_required?, Obligations.document_void_reason_required?(obligation))
     |> assign(:audit_logs, Obligations.list_audit_logs(obligation))
     |> assign(:can_add_document?, can_add_document?(scope, obligation))
+    |> assign(
+      :correctable?,
+      Index.cycle_status(obligation) == :completed and
+        is_nil(obligation.completed_in_error_at) and
+        Authorization.can?(socket.assigns.current_scope, :mark_completed_in_error)
+    )
   end
 
   defp find_event_document(events, nil, document_id) do
