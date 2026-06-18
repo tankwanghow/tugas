@@ -90,6 +90,14 @@ defmodule Argus.AuthorizationTest do
     end
   end
 
+  describe "mark_completed_in_error" do
+    test "admin and manager may, member may not" do
+      assert Authorization.can?(entity_scope_fixture(), :mark_completed_in_error)
+      assert Authorization.can?(manager_scope_fixture(), :mark_completed_in_error)
+      refute Authorization.can?(member_scope_fixture(), :mark_completed_in_error)
+    end
+  end
+
   defp collaborator_scope_fixture do
     admin_scope = entity_scope_fixture()
     collaborator = user_fixture()
