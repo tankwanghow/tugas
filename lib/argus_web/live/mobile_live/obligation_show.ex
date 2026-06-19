@@ -282,10 +282,13 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
 
       <div :if={@editing_note_id} id="m-note-modal" class="modal modal-bottom modal-open">
         <div class="modal-box">
-          <h3 class="font-bold text-lg">Edit note</h3>
           <.form for={@note_form} id="m-note-form" phx-submit="save_note" class="mt-4 space-y-3">
             <input type="hidden" name="event_id" value={@editing_note_id} />
-            <.input field={@note_form[:note]} type="textarea" label="Note" />
+            <.input
+              field={@note_form[:note]}
+              type="textarea"
+              class="textarea w-full h-[50vh]"
+            />
             <div class="modal-action">
               <button type="button" class="btn" phx-click="cancel_note_edit">Cancel</button>
               <.button class="btn btn-primary" phx-disable-with="Saving…">Save</.button>
