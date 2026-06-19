@@ -25,10 +25,30 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
         </.link>
 
         <section id="obligation-summary" class="argus-workbench argus-obligation-summary">
+          <div
+            id="obligation-meta"
+            class="text-base-content/70"
+          >
+            <div class="flex justify-between items-center">
+              <div class="font-bold text-info truncate">
+                {@obligation.obligation_type.name}
+              </div>
+              <div class="font-medium text-base-content">
+                <span class="text-warning">Due </span>{format_date(@obligation.due_by, :short)}
+              </div>
+              <div :if={@cycle_status == :cancelled} class="text-error">
+                Cancelled
+              </div>
+            </div>
+          </div>
           <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
             <h1 class="text-lg font-semibold leading-tight min-w-0 flex-1">{@obligation.title}</h1>
             <.urgency_badge :if={@live?} urgency={@urgency} />
-            <.obligation_status_badge :if={!@live?} cycle_status={@cycle_status} />
+            <.obligation_status_badge
+              :if={!@live?}
+              cycle_status={@cycle_status}
+              detail={if @cycle_status == :completed, do: format_datetime(@obligation.completed_at)}
+            />
             <div :if={@correctable?} class="dropdown dropdown-end">
               <div
                 tabindex="0"
@@ -58,34 +78,9 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
             </div>
           </div>
           <div
-            id="obligation-meta"
-            class="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-sm text-base-content/70"
-          >
-            <div class="min-w-0">
-              <div class="argus-meta-label">Type</div>
-              <div class="font-medium text-base-content truncate">
-                {@obligation.obligation_type.name}
-              </div>
-            </div>
-            <div class="min-w-0">
-              <div class="argus-meta-label">Due</div>
-              <div class="font-medium text-base-content">{format_date(@obligation.due_by)}</div>
-              <div :if={@live?} class="text-xs text-base-content/60">
-                {due_label(@obligation.due_by, @today)}
-              </div>
-              <div :if={@cycle_status == :completed} class="text-xs text-base-content/60">
-                Completed {format_datetime(@obligation.completed_at)}
-              </div>
-              <div :if={@cycle_status == :cancelled} class="text-xs text-base-content/60">
-                Cancelled
-              </div>
-            </div>
-          </div>
-          <div
             :if={@required_docs != []}
             class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5"
           >
-            <span class="argus-meta-label">Completion documents</span>
             <span
               :for={{slot, live} <- @required_docs}
               class="border rounded-xl p-1 inline-flex items-center gap-2 text-sm"
@@ -287,10 +282,10 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
             <div class="relative">
               <textarea name="note[note]" class="textarea w-full h-[50vh] pb-14">{Phoenix.HTML.Form.normalize_value("textarea", @note_form[:note].value)}</textarea>
               <div class="absolute bottom-3 right-3 flex gap-2">
-                <button type="button" class="btn btn-ghost btn-sm" phx-click="cancel_note_edit">
+                <button type="button" class="btn btn-warning btn-sm" phx-click="cancel_note_edit">
                   Cancel
                 </button>
-                <.button class="btn btn-primary btn-sm" phx-disable-with="Saving…">Save</.button>
+                <.button class="btn btn-success btn-sm" phx-disable-with="Saving…">Save</.button>
               </div>
             </div>
           </.form>

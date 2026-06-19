@@ -5,10 +5,13 @@ defmodule ArgusWeb.ObligationStatusBadge do
   use Phoenix.Component
 
   attr :cycle_status, :atom, required: true
+  attr :detail, :string, default: nil
 
   def obligation_status_badge(assigns) do
     ~H"""
-    <span :if={@cycle_status == :completed} class="badge badge-success badge-sm">Completed</span>
+    <div :if={@cycle_status == :completed} class="badge badge-success badge-sm gap-1">
+      Completed<p :if={@detail} class="font-normal text-xs">{@detail}</p>
+    </div>
     <span :if={@cycle_status == :cancelled} class="badge badge-error badge-sm">Cancelled</span>
     """
   end

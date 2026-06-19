@@ -63,6 +63,19 @@ defmodule ArgusWeb.MobileLiveTest do
     refute has_element?(view, "#m-done-modal")
   end
 
+  test "mobile completed badge shows the completion datetime", %{conn: conn} do
+    {scope, obligation} = manager_obligation_scope_fixture()
+    conn = mobile_conn(conn, scope)
+
+    {:ok, done, _} = Obligations.complete(scope, obligation, %{note: "Done"})
+    stamp = ArgusWeb.CoreComponents.format_datetime(done.completed_at)
+
+    {:ok, view, _html} = live(conn, ~p"/m/#{scope.entity.slug}/obligations/#{done.id}")
+
+    assert render(view) =~ "Completed"
+    assert render(view) =~ stamp
+  end
+
   test "mobile note editing happens in a modal", %{conn: conn} do
     {scope, obligation} = manager_obligation_scope_fixture()
     conn = mobile_conn(conn, scope)
