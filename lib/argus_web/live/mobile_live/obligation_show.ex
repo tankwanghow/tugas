@@ -109,7 +109,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
           <div
             :if={@live?}
             id="obligation-actions"
-            class="mt-3 pt-3 border-t border-base-300 flex items-center gap-2 w-full"
+            class="mt-3 pt-3 border-t border-base-300 flex items-center gap-3 w-full"
           >
             <div id="obligation-progress-actions" class="argus-inline-actions gap-2">
               <button
@@ -117,7 +117,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
                 id="m-edit-obligation-btn"
                 type="button"
                 phx-click="open_edit_modal"
-                class="btn btn-ghost btn-sm btn-square"
+                class="btn btn-ghost btn-square h-11 min-h-11 w-11"
                 aria-label="Edit"
               >
                 <.icon name="hero-pencil-square-mini" class="size-5" />
@@ -127,7 +127,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
                 id="m-start-progress-btn"
                 type="button"
                 phx-click="open_progress_modal"
-                class="btn btn-outline btn-sm btn-square"
+                class="btn btn-outline btn-square h-11 min-h-11 w-11"
                 aria-label="Update progress"
               >
                 <.icon name="hero-play-mini" class="size-5" />
@@ -139,7 +139,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
                 id="m-done-btn"
                 type="button"
                 phx-click="open_done_modal"
-                class="btn btn-primary btn-sm btn-square"
+                class="btn btn-primary btn-square h-11 min-h-11 w-11"
                 aria-label="Mark done"
               >
                 <.icon name="hero-check-mini" class="size-5" />
@@ -151,7 +151,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
                 id="m-skip-btn"
                 type="button"
                 phx-click="open_skip_modal"
-                class="btn btn-ghost btn-warning btn-sm btn-square"
+                class="btn btn-ghost btn-warning btn-square h-11 min-h-11 w-11"
                 aria-label="Skip cycle"
               >
                 <.icon name="hero-forward-mini" class="size-5" />
@@ -161,7 +161,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
                 id="m-cancel-btn"
                 type="button"
                 phx-click="open_cancel_modal"
-                class="btn btn-ghost btn-error btn-sm btn-square"
+                class="btn btn-ghost btn-error btn-square h-11 min-h-11 w-11"
                 aria-label="Cancel"
               >
                 <.icon name="hero-x-mark-mini" class="size-5" />
