@@ -16,7 +16,11 @@ defmodule Argus.Obligations.Event do
     timestamps(type: :utc_datetime, updated_at: false)
   end
 
-  @statuses ~w(open in_progress done cancelled)
+  @statuses ~w(open in_progress done cancelled skipped series_ended)
+  @terminal_statuses ~w(done cancelled skipped series_ended)
+
+  @doc "Statuses that close a cycle (no further progress allowed)."
+  def terminal_statuses, do: @terminal_statuses
 
   @doc false
   def changeset(event, attrs) do

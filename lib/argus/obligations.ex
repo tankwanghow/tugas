@@ -925,7 +925,7 @@ defmodule Argus.Obligations do
   defp ensure_progressable(%Obligation{} = obligation) do
     closed? =
       Event
-      |> where([e], e.obligation_id == ^obligation.id and e.status in ["done", "cancelled"])
+      |> where([e], e.obligation_id == ^obligation.id and e.status in ^Event.terminal_statuses())
       |> Repo.exists?()
 
     if closed?, do: {:error, :not_live}, else: :ok
