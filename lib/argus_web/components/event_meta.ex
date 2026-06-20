@@ -26,10 +26,13 @@ defmodule ArgusWeb.EventMeta do
   end
 
   defp humanize_status("in_progress"), do: "In progress"
+  defp humanize_status("series_ended"), do: "Series ended"
   defp humanize_status(status), do: String.capitalize(status)
 
   defp status_badge_class("in_progress"), do: "badge-warning badge-soft"
   defp status_badge_class("done"), do: "badge-success badge-soft"
+  defp status_badge_class("skipped"), do: "badge-warning badge-soft"
+  defp status_badge_class("series_ended"), do: "badge-neutral badge-soft"
   defp status_badge_class("cancelled"), do: "badge-error badge-soft"
   defp status_badge_class(_), do: "badge-ghost"
 

@@ -21,6 +21,10 @@ defmodule ArgusWeb.ObligationStatusBadge do
       <div :if={@detail} class="text-[12px]">{@detail}</div>
     </div>
     <span :if={@cycle_status == :cancelled} class="badge badge-error badge-sm">Cancelled</span>
+    <span :if={@cycle_status == :skipped} class="badge badge-warning badge-sm">Skipped</span>
+    <span :if={@cycle_status == :series_ended} class="badge badge-neutral badge-sm">
+      Series ended
+    </span>
     """
   end
 end
