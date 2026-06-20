@@ -54,12 +54,14 @@ defmodule ArgusWeb.MobileLive.Components do
     """
   end
 
-  defp accent(%{cycle_status: :cancelled}), do: "border-error/60"
+  defp accent(%{cycle_status: status}) when status in [:skipped, :series_ended],
+    do: "border-error/60"
+
   defp accent(%{cycle_status: :completed}), do: "border-success/60"
   defp accent(%{tier: tier}), do: tier_border(tier)
   defp accent(_), do: "border-transparent"
 
-  defp text_color(%{cycle_status: status}) when status in [:completed, :cancelled],
+  defp text_color(%{cycle_status: status}) when status in [:completed, :skipped, :series_ended],
     do: "text-base-content/50"
 
   defp text_color(%{tier: tier}) when tier in [:overdue, :critical], do: "text-error"
@@ -70,11 +72,15 @@ defmodule ArgusWeb.MobileLive.Components do
     "completed #{format_datetime(o.completed_at)} · due #{format_date(o.due_by)}"
   end
 
-  defp card_meta(%{cycle_status: :cancelled, obligation: o}) do
-    "cancelled · due #{format_date(o.due_by)}"
+  defp card_meta(%{cycle_status: status, obligation: o})
+       when status in [:skipped, :series_ended] do
+    "#{humanize_cycle(status)} · due #{format_date(o.due_by)}"
   end
 
   defp card_meta(%{obligation: o}) do
     "due #{format_date(o.due_by)}"
   end
+
+  defp humanize_cycle(:series_ended), do: "series ended"
+  defp humanize_cycle(_), do: "skipped"
 end

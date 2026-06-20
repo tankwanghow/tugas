@@ -33,7 +33,6 @@ defmodule ArgusWeb.EventMeta do
   defp status_badge_class("done"), do: "badge-success badge-soft"
   defp status_badge_class("skipped"), do: "badge-warning badge-soft"
   defp status_badge_class("series_ended"), do: "badge-neutral badge-soft"
-  defp status_badge_class("cancelled"), do: "badge-error badge-soft"
   defp status_badge_class(_), do: "badge-ghost"
 
   defp event_count_label(1), do: "1 event"

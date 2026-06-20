@@ -394,7 +394,7 @@ defmodule ArgusWeb.ObligationLive.Show do
         <div class="modal-box">
           <h3 class="font-bold text-lg">Edit obligation</h3>
           <.form for={@edit_form} id="edit-obligation-form" phx-submit="save_obligation" class="mt-2">
-            <.char_count_input field={@edit_form[:title]} label="Title" max={30} required />
+            <.char_count_input field={@edit_form[:title]} label="Title" max={60} required />
             <.input field={@edit_form[:due_by]} type="date" label="Due by" required />
             <div class="fieldset mb-2">
               <.input
@@ -1344,7 +1344,8 @@ defmodule ArgusWeb.ObligationLive.Show do
   end
 
   defp event_accent("done"), do: "border-success"
-  defp event_accent("cancelled"), do: "border-error"
+  defp event_accent("skipped"), do: "border-warning"
+  defp event_accent("series_ended"), do: "border-neutral"
   defp event_accent("in_progress"), do: "border-warning"
   defp event_accent(_), do: "border-base-300"
 

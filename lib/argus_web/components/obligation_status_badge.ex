@@ -1,6 +1,6 @@
 defmodule ArgusWeb.ObligationStatusBadge do
   @moduledoc """
-  Renders completed / cancelled badges for non-live obligation cycles.
+  Renders completed / skipped / series-ended badges for non-live obligation cycles.
   """
   use Phoenix.Component
 
@@ -20,7 +20,6 @@ defmodule ArgusWeb.ObligationStatusBadge do
       <div class="font-bold text-xs">Completed</div>
       <div :if={@detail} class="text-[12px]">{@detail}</div>
     </div>
-    <span :if={@cycle_status == :cancelled} class="badge badge-error badge-sm">Cancelled</span>
     <span :if={@cycle_status == :skipped} class="badge badge-warning badge-sm">Skipped</span>
     <span :if={@cycle_status == :series_ended} class="badge badge-neutral badge-sm">
       Series ended

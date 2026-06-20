@@ -198,6 +198,28 @@ defmodule ArgusWeb.MobileLiveTest do
     refute has_element?(view, "#m-obligations-empty")
   end
 
+  test "mobile dashboard filters skipped cycles", %{conn: conn} do
+    manager = Argus.EntitiesFixtures.manager_scope_fixture()
+    conn = mobile_conn(conn, manager)
+    type = type_fixture(manager.entity)
+
+    {:ok, to_skip} =
+      Obligations.create_obligation(manager, %{
+        title: "Skip Me",
+        obligation_type_id: type.id,
+        due_by: ~D[2026-06-30],
+        open_note: "Opening"
+      })
+
+    assert {:ok, skipped, nil} = Obligations.skip(manager, to_skip, %{note: "Skipping it"})
+
+    {:ok, view, _html} = live(conn, ~p"/m/#{manager.entity.slug}")
+
+    view |> element("#m-filter-skipped") |> render_click()
+    assert has_element?(view, "#m-ob-#{skipped.id}")
+    assert render(view) =~ "skipped"
+  end
+
   test "mobile more sheet links to all entities picker", %{conn: conn} do
     {scope, _} = assigned_member_scope_fixture()
     conn = mobile_conn(conn, scope)
