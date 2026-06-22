@@ -175,9 +175,7 @@ defmodule ArgusWeb.ObligationLiveTest do
     assert render(solo_view) =~ assignee.email
   end
 
-  test "completion modal: manager stages files for two slots and uploads individually", %{
-    conn: conn
-  } do
+  test "completion modal: shows uploaded files for both required slots", %{conn: conn} do
     manager = Argus.EntitiesFixtures.manager_scope_fixture()
     conn = log_in_user(conn, manager.user)
     member = member_fixture(manager.entity)
@@ -194,50 +192,22 @@ defmodule ArgusWeb.ObligationLiveTest do
         open_note: "EPF opened"
       })
 
+    seed_document(manager, obligation, "receipt", "receipt.pdf")
+    seed_document(manager, obligation, "statutory_form", "form.pdf")
+
     {:ok, view, _html} =
       live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}")
 
     view |> element("#open-completion-slot-receipt") |> render_click()
 
-    # Stage receipt slot.
-    view |> element("#select-slot-receipt") |> render_click()
-
-    file =
-      file_input(view, "#completion-upload-form", :document, [
-        %{name: "receipt.pdf", content: "scan", type: "application/pdf"}
-      ])
-
-    render_upload(file, "receipt.pdf")
-    view |> form("#completion-upload-form", %{"picker_slot" => "receipt"}) |> render_change()
-    assert has_element?(view, "#upload-slot-receipt")
-
-    # Upload receipt slot; statutory_form should still have its uploader.
-    view |> element("#upload-slot-receipt") |> render_click()
-    assert render(view) =~ "Document added"
-    assert has_element?(view, "#select-slot-statutory_form")
-    refute has_element?(view, "#upload-slot-receipt")
-
-    # Stage and upload statutory_form slot.
-    view |> element("#select-slot-statutory_form") |> render_click()
-
-    file2 =
-      file_input(view, "#completion-upload-form", :document, [
-        %{name: "form.pdf", content: "scan", type: "application/pdf"}
-      ])
-
-    render_upload(file2, "form.pdf")
-
-    view
-    |> form("#completion-upload-form", %{"picker_slot" => "statutory_form"})
-    |> render_change()
-
-    view |> element("#upload-slot-statutory_form") |> render_click()
-    assert render(view) =~ "Document added"
     assert render(view) =~ "receipt.pdf"
     assert render(view) =~ "form.pdf"
+    # Both slots satisfied: their Choose file buttons are gone.
+    refute has_element?(view, "#select-slot-receipt")
+    refute has_element?(view, "#select-slot-statutory_form")
   end
 
-  test "completion modal: shows an error when a staged file exceeds the size limit", %{
+  test "completion slot offers a direct-upload Choose file button when unsatisfied", %{
     conn: conn
   } do
     manager = Argus.EntitiesFixtures.manager_scope_fixture()
@@ -256,19 +226,64 @@ defmodule ArgusWeb.ObligationLiveTest do
       live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}")
 
     view |> element("#open-completion-slot-receipt") |> render_click()
-    view |> element("#select-slot-receipt") |> render_click()
 
-    file =
-      file_input(view, "#completion-upload-form", :document, [
-        %{name: "huge.pdf", content: String.duplicate("x", 20_000_001), type: "application/pdf"}
-      ])
+    # The button drives the UploadDirect hook (plain HTTP POST), not a socket
+    # upload — it points at the controller endpoint for this obligation.
+    assert has_element?(
+             view,
+             "#select-slot-receipt[phx-hook='UploadDirect']" <>
+               "[data-upload-url='/entities/#{manager.entity.slug}/obligations/#{obligation.id}/documents']"
+           )
+  end
 
-    render_upload(file, "huge.pdf")
-    view |> form("#completion-upload-form", %{"picker_slot" => "receipt"}) |> render_change()
+  test "open_documents_from_done persists the completion modal for reconnect", %{conn: conn} do
+    manager = Argus.EntitiesFixtures.manager_scope_fixture()
+    conn = log_in_user(conn, manager.user)
+    type = type_fixture(manager.entity, complete_documents: "receipt")
 
-    assert render(view) =~ "too large"
-    # The confirm button is hidden so the oversized file can't be saved (only clear remains).
-    refute has_element?(view, "#upload-slot-receipt")
+    {:ok, obligation} =
+      Obligations.create_obligation(manager, %{
+        title: "EPF June",
+        obligation_type_id: type.id,
+        due_by: ~D[2026-06-30],
+        open_note: "EPF opened"
+      })
+
+    {:ok, view, _html} =
+      live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}")
+
+    view |> element("#obligation-show") |> render_hook("open_documents_from_done", %{})
+
+    assert_push_event(view, "persist_completion_modal", %{})
+    assert has_element?(view, "#completion-modal")
+  end
+
+  test "reconnect: restore_step_files reopens the step files modal", %{conn: conn} do
+    manager = Argus.EntitiesFixtures.manager_scope_fixture()
+    conn = log_in_user(conn, manager.user)
+    type = type_fixture(manager.entity, complete_documents: "")
+
+    {:ok, obligation} =
+      Obligations.create_obligation(manager, %{
+        title: "EPF June",
+        obligation_type_id: type.id,
+        due_by: ~D[2026-06-30],
+        open_note: "EPF opened"
+      })
+
+    obligation = Obligations.get_obligation!(manager, obligation.id)
+    [open_event] = Enum.filter(obligation.events, &(&1.status == "open"))
+
+    {:ok, view, _html} =
+      live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}")
+
+    refute has_element?(view, "#step-files-modal-#{open_event.id}")
+
+    view
+    |> element("#obligation-show")
+    |> render_hook("restore_step_files", %{"event_id" => open_event.id})
+
+    assert has_element?(view, "#step-files-modal-#{open_event.id}")
   end
 
   test "completion modal: deleting a required-slot file within 48h reopens the slot uploader", %{
@@ -288,22 +303,12 @@ defmodule ArgusWeb.ObligationLiveTest do
         open_note: "EPF opened"
       })
 
+    seed_document(manager, obligation, "receipt", "receipt.pdf")
+
     {:ok, view, _html} =
       live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}")
 
     view |> element("#open-completion-slot-receipt") |> render_click()
-
-    # Upload a file into the "receipt" slot.
-    view |> element("#select-slot-receipt") |> render_click()
-
-    file =
-      file_input(view, "#completion-upload-form", :document, [
-        %{name: "receipt.pdf", content: "scan", type: "application/pdf"}
-      ])
-
-    render_upload(file, "receipt.pdf")
-    view |> form("#completion-upload-form", %{"picker_slot" => "receipt"}) |> render_change()
-    view |> element("#upload-slot-receipt") |> render_click()
 
     # Slot is now satisfied: file shown, select button gone.
     obligation = Obligations.get_obligation!(manager, obligation.id)
@@ -558,18 +563,10 @@ defmodule ArgusWeb.ObligationLiveTest do
 
     refute has_element?(view, "#done-btn")
 
-    # Upload the required receipt via the completion modal.
-    view |> element("#open-completion-slot-receipt") |> render_click()
-    view |> element("#select-slot-receipt") |> render_click()
-
-    file =
-      file_input(view, "#completion-upload-form", :document, [
-        %{name: "receipt.pdf", content: "scan", type: "application/pdf"}
-      ])
-
-    render_upload(file, "receipt.pdf")
-    view |> form("#completion-upload-form", %{"picker_slot" => "receipt"}) |> render_change()
-    view |> element("#upload-slot-receipt") |> render_click()
+    # Attach the required receipt (as the UploadDirect/controller path would),
+    # then the client signals the LiveView to refresh.
+    seed_document(manager, obligation, "receipt", "receipt.pdf")
+    view |> element("#obligation-show") |> render_hook("document_uploaded", %{})
 
     # Slot satisfied → Mark done becomes available.
     assert has_element?(view, "#done-btn")
@@ -598,18 +595,9 @@ defmodule ArgusWeb.ObligationLiveTest do
     view |> element("#start-progress-btn") |> render_click()
     view |> form("#progress-form", %{"progress" => %{"note" => "Working"}}) |> render_submit()
 
-    # Upload the required receipt — it physically attaches to the in_progress event.
-    view |> element("#open-completion-slot-receipt") |> render_click()
-    view |> element("#select-slot-receipt") |> render_click()
-
-    file =
-      file_input(view, "#completion-upload-form", :document, [
-        %{name: "receipt.pdf", content: "scan", type: "application/pdf"}
-      ])
-
-    render_upload(file, "receipt.pdf")
-    view |> form("#completion-upload-form", %{"picker_slot" => "receipt"}) |> render_change()
-    view |> element("#upload-slot-receipt") |> render_click()
+    # Attach the required receipt — it physically attaches to the in_progress event.
+    seed_document(manager, obligation, "receipt", "receipt.pdf")
+    view |> element("#obligation-show") |> render_hook("document_uploaded", %{})
 
     # The slot is surfaced as a thumbnail in the summary; required files stay off the timeline.
     assert has_element?(
@@ -797,25 +785,13 @@ defmodule ArgusWeb.ObligationLiveTest do
         open_note: "EPF opened"
       })
 
-    obligation = Obligations.get_obligation!(manager, obligation.id)
-    [_open_event] = Enum.filter(obligation.events, &(&1.status == "open"))
+    # Attach into the "receipt" slot (the cycle's workable open event).
+    seed_document(manager, obligation, "receipt", "receipt.pdf")
 
     {:ok, view, _html} =
       live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}")
 
     view |> element("#open-completion-slot-receipt") |> render_click()
-
-    # Upload into the "receipt" slot from the cycle modal (no event id in the form).
-    view |> element("#select-slot-receipt") |> render_click()
-
-    file =
-      file_input(view, "#completion-upload-form", :document, [
-        %{name: "receipt.pdf", content: "scan", type: "application/pdf"}
-      ])
-
-    render_upload(file, "receipt.pdf")
-    view |> form("#completion-upload-form", %{"picker_slot" => "receipt"}) |> render_change()
-    view |> element("#upload-slot-receipt") |> render_click()
 
     # receipt satisfied (shows file + Delete), form still unsatisfied (shows uploader).
     obligation = Obligations.get_obligation!(manager, obligation.id)
@@ -925,21 +901,12 @@ defmodule ArgusWeb.ObligationLiveTest do
     {:ok, view, _html} =
       live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}")
 
+    # Attach an additional (no-slot) file to this step, then refresh the view.
+    {:ok, _} =
+      Obligations.add_document(manager, obligation, open_event, upload_fixture("notes.pdf"), nil)
+
     view |> element("#step-files-btn-#{open_event.id}") |> render_click()
-    view |> element("#select-additional-#{open_event.id}") |> render_click()
-
-    file =
-      file_input(view, "#step-upload-form-#{open_event.id}", :document, [
-        %{name: "notes.pdf", content: "x", type: "application/pdf"}
-      ])
-
-    render_upload(file, "notes.pdf")
-
-    view
-    |> form("#step-upload-form-#{open_event.id}", %{"picker_slot" => "additional"})
-    |> render_change()
-
-    view |> element("#upload-additional-#{open_event.id}") |> render_click()
+    view |> element("#obligation-show") |> render_hook("document_uploaded", %{})
 
     assert has_element?(view, "#step-files-#{open_event.id}", "notes.pdf")
 
@@ -1084,5 +1051,21 @@ defmodule ArgusWeb.ObligationLiveTest do
       filename: filename,
       content_type: "application/pdf"
     }
+  end
+
+  # Attach a document to the obligation's current workable event, mirroring what
+  # the UploadDirect/controller path does — so LiveView tests can exercise the
+  # rendered result without simulating the browser upload.
+  defp seed_document(scope, obligation, slot, filename) do
+    obligation = Obligations.get_obligation!(scope, obligation.id)
+
+    event =
+      Enum.find(obligation.events, &(&1.status == "in_progress")) ||
+        Enum.find(obligation.events, &(&1.status == "open"))
+
+    {:ok, doc} =
+      Obligations.add_document(scope, obligation, event, upload_fixture(filename, "scan"), slot)
+
+    doc
   end
 end

@@ -78,6 +78,100 @@ defmodule ArgusWeb.DocumentControllerTest do
     assert disp =~ "attachment"
   end
 
+  describe "create (multipart upload)" do
+    test "uploads a document to the current workable event", %{conn: conn} do
+      manager = manager_scope_fixture()
+      conn = log_in_user(conn, manager.user)
+      type = type_fixture(manager.entity, complete_documents: "receipt")
+
+      {:ok, obligation} =
+        Obligations.create_obligation(manager, %{
+          title: "EPF",
+          obligation_type_id: type.id,
+          due_by: ~D[2026-06-30],
+          open_note: "open"
+        })
+
+      path = Path.join(System.tmp_dir!(), "create_#{System.unique_integer()}.pdf")
+      File.write!(path, "receipt contents")
+
+      conn =
+        post(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}/documents", %{
+          "file" => %Plug.Upload{
+            path: path,
+            filename: "receipt.pdf",
+            content_type: "application/pdf"
+          },
+          "document_slot" => "receipt"
+        })
+
+      assert json_response(conn, 200)["ok"] == true
+
+      obligation = Obligations.get_obligation!(manager, obligation.id)
+      docs = Obligations.list_cycle_documents(obligation)
+
+      assert Enum.any?(
+               docs,
+               &(&1.document_slot == "receipt" and &1.file["original"] == "receipt.pdf")
+             )
+    end
+
+    test "rejects a video over the per-kind size limit with 413", %{conn: conn} do
+      manager = manager_scope_fixture()
+      conn = log_in_user(conn, manager.user)
+      type = type_fixture(manager.entity, complete_documents: "receipt")
+
+      {:ok, obligation} =
+        Obligations.create_obligation(manager, %{
+          title: "EPF",
+          obligation_type_id: type.id,
+          due_by: ~D[2026-06-30],
+          open_note: "open"
+        })
+
+      path = Path.join(System.tmp_dir!(), "big_#{System.unique_integer()}.mp4")
+      File.write!(path, String.duplicate("x", 11_000_000))
+
+      conn =
+        post(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}/documents", %{
+          "file" => %Plug.Upload{path: path, filename: "clip.mp4", content_type: "video/mp4"}
+        })
+
+      body = json_response(conn, 413)
+      assert body["ok"] == false
+      assert body["error"] =~ "max 10 MB for videos"
+    end
+
+    test "returns 403 when the member is not allowed to add documents", %{conn: conn} do
+      manager = manager_scope_fixture()
+      member = member_fixture(manager.entity)
+
+      {:ok, obligation} =
+        Obligations.create_obligation(manager, %{
+          title: "EPF",
+          obligation_type_id: type_fixture(manager.entity).id,
+          due_by: ~D[2026-06-30],
+          open_note: "open"
+        })
+
+      conn = log_in_user(conn, member)
+
+      path = Path.join(System.tmp_dir!(), "denied_#{System.unique_integer()}.pdf")
+      File.write!(path, "x")
+
+      conn =
+        post(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}/documents", %{
+          "file" => %Plug.Upload{
+            path: path,
+            filename: "denied.pdf",
+            content_type: "application/pdf"
+          }
+        })
+
+      assert json_response(conn, 403)["ok"] == false
+    end
+  end
+
   test "serves a voided document so it can still be downloaded", %{conn: conn} do
     manager = manager_scope_fixture()
     conn = log_in_user(conn, manager.user)

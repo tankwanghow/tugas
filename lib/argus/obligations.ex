@@ -341,7 +341,7 @@ defmodule Argus.Obligations do
 
     with true <- can_add_document?(scope, obligation),
          :ok <- ensure_event_workable(event, obligation),
-         file = Uploads.store(upload, obligation.entity_id, obligation.id),
+         {:ok, file} <- store_upload(upload, obligation),
          {:ok, document} <- insert_document(scope, event, file, document_slot) do
       {:ok, document}
     else
@@ -1031,6 +1031,13 @@ defmodule Argus.Obligations do
   defp delete_document_row(%EventDocument{} = document) do
     Uploads.delete(document)
     Repo.delete(document)
+  end
+
+  defp store_upload(upload, obligation) do
+    case Uploads.store(upload, obligation.entity_id, obligation.id) do
+      {:error, :file_too_large} -> {:error, :file_too_large}
+      file when is_map(file) -> {:ok, file}
+    end
   end
 
   defp can_add_document?(scope, obligation) do

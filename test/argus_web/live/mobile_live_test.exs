@@ -294,21 +294,39 @@ defmodule ArgusWeb.MobileLiveTest do
     {:ok, view, _html} =
       live(conn, ~p"/m/#{manager.entity.slug}/obligations/#{obligation.id}")
 
-    view |> element("#m-open-completion-slot-receipt") |> render_click()
-    view |> element("#m-select-slot-receipt") |> render_click()
-
-    file =
-      file_input(view, "#m-completion-upload-form", :document, [
-        %{name: "receipt.pdf", content: "x", type: "application/pdf"}
-      ])
-
-    render_upload(file, "receipt.pdf")
-    view |> form("#m-completion-upload-form", %{"picker_slot" => "receipt"}) |> render_change()
-    view |> element("#m-upload-slot-receipt") |> render_click()
+    # Attach the receipt (as the UploadDirect/controller path would), then the
+    # client signals the LiveView to refresh.
+    seed_document(manager, obligation, "receipt", "receipt.pdf")
+    view |> element("#mobile-obligation-show") |> render_hook("document_uploaded", %{})
 
     assert has_element?(
              view,
              "#m-summary-slot-receipt a[data-doc-kind='pdf'][data-doc-name='receipt.pdf']"
+           )
+  end
+
+  test "mobile completion slot offers a direct-upload Choose file button", %{conn: conn} do
+    manager = Argus.EntitiesFixtures.manager_scope_fixture()
+    conn = mobile_conn(conn, manager)
+    type = type_fixture(manager.entity, complete_documents: "receipt")
+
+    {:ok, obligation} =
+      Obligations.create_obligation(manager, %{
+        title: "EPF",
+        obligation_type_id: type.id,
+        due_by: ~D[2026-06-30],
+        open_note: "open"
+      })
+
+    {:ok, view, _html} =
+      live(conn, ~p"/m/#{manager.entity.slug}/obligations/#{obligation.id}")
+
+    view |> element("#m-open-completion-slot-receipt") |> render_click()
+
+    assert has_element?(
+             view,
+             "#m-select-slot-receipt[phx-hook='UploadDirect']" <>
+               "[data-upload-url='/entities/#{manager.entity.slug}/obligations/#{obligation.id}/documents']"
            )
   end
 
@@ -423,5 +441,20 @@ defmodule ArgusWeb.MobileLiveTest do
       filename: filename,
       content_type: "application/octet-stream"
     }
+  end
+
+  # Attach a document to the obligation's current workable event, mirroring the
+  # UploadDirect/controller path, so tests can assert the rendered result.
+  defp seed_document(scope, obligation, slot, filename) do
+    obligation = Obligations.get_obligation!(scope, obligation.id)
+
+    event =
+      Enum.find(obligation.events, &(&1.status == "in_progress")) ||
+        Enum.find(obligation.events, &(&1.status == "open"))
+
+    {:ok, doc} =
+      Obligations.add_document(scope, obligation, event, upload_fixture(filename, "scan"), slot)
+
+    doc
   end
 end

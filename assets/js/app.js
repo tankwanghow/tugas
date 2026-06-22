@@ -25,6 +25,8 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/argus"
 import topbar from "../vendor/topbar"
 import * as pdfjsLib from "../vendor/pdfjs/pdf.min.mjs"
+import {UploadDirect} from "./upload_direct"
+import {UploadUiPersist} from "./upload_ui_persist"
 
 // The worker is a separate esbuild entry (js/pdf.worker.js) served as a static
 // asset; the browser only fetches it when a PDF is actually previewed.
@@ -59,7 +61,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, PdfThumb},
+  hooks: {...colocatedHooks, PdfThumb, UploadDirect, UploadUiPersist},
 })
 
 // Show progress bar on live navigation and form submits

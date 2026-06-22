@@ -3,13 +3,30 @@ defmodule Argus.Uploads do
   Local filesystem storage for obligation event documents.
   """
 
+  alias Argus.Uploads.Limits
+
   def store(%Plug.Upload{} = upload, entity_id, obligation_id) do
-    dest_dir = Path.join([base_dir(), to_string(entity_id), to_string(obligation_id)])
-    File.mkdir_p!(dest_dir)
-    filename = "#{Ecto.UUID.generate()}_#{upload.filename}"
-    dest = Path.join(dest_dir, filename)
-    File.cp!(upload.path, dest)
-    %{filename: filename, original: upload.filename, path: dest}
+    with :ok <- validate_upload_size(upload) do
+      dest_dir = Path.join([base_dir(), to_string(entity_id), to_string(obligation_id)])
+      File.mkdir_p!(dest_dir)
+      filename = "#{Ecto.UUID.generate()}_#{upload.filename}"
+      dest = Path.join(dest_dir, filename)
+      File.cp!(upload.path, dest)
+      %{filename: filename, original: upload.filename, path: dest}
+    end
+  end
+
+  defp validate_upload_size(%Plug.Upload{path: path, filename: filename}) do
+    size =
+      case File.stat(path) do
+        {:ok, %{size: size}} -> size
+        _ -> 0
+      end
+
+    case Limits.validate_size(filename, size) do
+      :ok -> :ok
+      {:error, _message} -> {:error, :file_too_large}
+    end
   end
 
   def delete(%{file: file}) when is_map(file) do

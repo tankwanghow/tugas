@@ -9,16 +9,13 @@ defmodule ArgusWeb.ObligationCompletionDocuments do
   import ArgusWeb.CoreComponents
 
   alias Argus.Obligations
-  alias ArgusWeb.LiveUpload
+  alias ArgusWeb.UploadSlotControls
 
   attr :obligation, :map, required: true
   attr :current_scope, :map, required: true
   attr :entity_slug, :string, required: true
   attr :documents, :list, required: true
   attr :required_slots, :list, required: true
-  attr :uploads, :map, required: true
-  attr :upload_slot_target, :any, default: nil
-  attr :upload_slot_entries, :map, default: %{}
   attr :uploadable?, :boolean, required: true
   attr :voiding_document_id, :any, default: nil
   attr :deleting_document_id, :any, default: nil
@@ -37,7 +34,6 @@ defmodule ArgusWeb.ObligationCompletionDocuments do
       assigns
       |> assign(:slot_rows, slot_rows)
       |> assign(:voided, voided)
-      |> assign(:form_id, "#{assigns.id_prefix}completion-upload-form")
 
     ~H"""
     <section id={"#{@id_prefix}completion-docs"} class="space-y-3">
@@ -120,12 +116,14 @@ defmodule ArgusWeb.ObligationCompletionDocuments do
               <% end %>
             </div>
 
-            <.slot_uploader
+            <UploadSlotControls.upload_slot_controls
               :if={is_nil(live) and @uploadable?}
               slot={slot}
               id_prefix={@id_prefix}
-              uploads={@uploads}
-              pending_entry={LiveUpload.entry_for_slot(@uploads, @upload_slot_entries, slot)}
+              upload_url={"/entities/#{@entity_slug}/obligations/#{@obligation.id}/documents"}
+              obligation_id={@obligation.id}
+              completion_slot?={true}
+              choose_button_id={"#{@id_prefix}select-slot-#{slot}"}
             />
           </div>
 
@@ -137,6 +135,10 @@ defmodule ArgusWeb.ObligationCompletionDocuments do
           />
         </li>
       </ul>
+
+      <p :if={@uploadable? and @slot_rows != []} class="text-xs text-base-content/50">
+        {Argus.Uploads.Limits.summary()}
+      </p>
 
       <section :if={@voided != []} id={"#{@id_prefix}completion-voided"} class="space-y-1">
         <div class="argus-meta-label">Voided required files</div>
@@ -166,118 +168,7 @@ defmodule ArgusWeb.ObligationCompletionDocuments do
           </li>
         </ul>
       </section>
-
-      <.upload_form
-        :if={@uploadable?}
-        form_id={@form_id}
-        uploads={@uploads}
-        upload_slot_target={@upload_slot_target}
-        id_prefix={@id_prefix}
-      />
-
-      <script :type={Phoenix.LiveView.ColocatedHook} name=".SlotFilePicker">
-        export default {
-          mounted() {
-            this.el.addEventListener("click", () => {
-              const panel = this.el.closest("section")
-              const form = panel?.querySelector("[data-upload-form]")
-              if (!form) return
-              const slot = this.el.dataset.slot
-              const pickerInput = form.querySelector("[name='picker_slot']")
-              const slotInput = form.querySelector("[name='document_slot']")
-              if (pickerInput) pickerInput.value = slot
-              if (slotInput) { slotInput.disabled = false; slotInput.value = slot }
-              const fileInput = form.querySelector("input[type='file']")
-              if (fileInput) fileInput.click()
-            })
-          }
-        }
-      </script>
     </section>
-    """
-  end
-
-  attr :slot, :string, required: true
-  attr :id_prefix, :string, required: true
-  attr :uploads, :map, required: true
-  attr :pending_entry, :any, default: nil
-
-  defp slot_uploader(assigns) do
-    assigns =
-      assigns
-      |> assign(:ready?, LiveUpload.entry_ready?(assigns.pending_entry))
-      |> assign(:errors, LiveUpload.entry_error_messages(assigns.uploads, assigns.pending_entry))
-
-    ~H"""
-    <div class="flex items-center gap-1 justify-between flex-1 min-w-0">
-      <%= if @pending_entry do %>
-        <div class="min-w-0 flex-1">
-          <span class="text-sm font-medium truncate block">{@pending_entry.client_name}</span>
-          <p :if={@errors != []} class="text-xs text-error mt-0.5">{hd(@errors)}</p>
-        </div>
-        <div class="shrink-0">
-          <button
-            :if={@errors == []}
-            id={"#{@id_prefix}upload-slot-#{@slot}"}
-            type="button"
-            phx-click="add_document"
-            phx-value-slot={@slot}
-            disabled={not @ready?}
-            class={["cursor-pointer text-xl", not @ready? && "btn-disabled"]}
-            phx-disable-with="Saving…"
-          >
-            ✅
-          </button>
-          <button
-            type="button"
-            phx-click="clear_upload_slot"
-            phx-value-slot={@slot}
-            class="cursor-pointer text-xl"
-          >
-            ❌
-          </button>
-        </div>
-      <% else %>
-        <button
-          id={"#{@id_prefix}select-slot-#{@slot}"}
-          type="button"
-          phx-hook=".SlotFilePicker"
-          data-slot={@slot}
-          phx-click="select_upload_slot"
-          phx-value-slot={@slot}
-          class="btn btn-primary btn-xs h-7 min-h-7 ml-auto"
-        >
-          Choose file
-        </button>
-      <% end %>
-    </div>
-    """
-  end
-
-  attr :form_id, :string, required: true
-  attr :uploads, :map, required: true
-  attr :upload_slot_target, :any, default: nil
-  attr :id_prefix, :string, required: true
-
-  defp upload_form(assigns) do
-    ~H"""
-    <.form
-      for={%{}}
-      id={@form_id}
-      data-upload-form
-      phx-change="validate_upload"
-      phx-submit="add_document"
-      class="sr-only"
-    >
-      <input type="hidden" name="picker_slot" value={picker_value(@upload_slot_target)} />
-      <input
-        type="hidden"
-        name="document_slot"
-        value={slot_value(@upload_slot_target)}
-        disabled={@upload_slot_target in [nil, :additional]}
-      />
-      <.live_file_input upload={@uploads.document} class="sr-only" />
-    </.form>
     """
   end
 
@@ -308,11 +199,6 @@ defmodule ArgusWeb.ObligationCompletionDocuments do
     </.form>
     """
   end
-
-  defp picker_value(slot) when is_binary(slot), do: slot
-  defp picker_value(_), do: ""
-  defp slot_value(slot) when is_binary(slot), do: slot
-  defp slot_value(_), do: ""
 
   defp file_name(%{file: file}) when is_map(file) do
     Map.get(file, "original") || Map.get(file, :original) || "file"

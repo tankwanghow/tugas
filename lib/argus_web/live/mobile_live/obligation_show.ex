@@ -11,13 +11,18 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
   alias Argus.Authorization
   alias Argus.Entities
   alias Argus.Obligations
-  alias Argus.Obligations.{Event, Obligation, Recurrence, Urgency}
+  alias Argus.Obligations.{Obligation, Recurrence, Urgency}
 
   @impl true
   def render(assigns) do
     ~H"""
     <Layouts.mobile_app flash={@flash} current_scope={@current_scope} active={:obligations}>
-      <div id="mobile-obligation-show" class="px-2 py-2">
+      <div
+        id="mobile-obligation-show"
+        class="px-2 py-2"
+        phx-hook="UploadUiPersist"
+        data-obligation-id={@obligation.id}
+      >
         <section id="obligation-summary" class="argus-workbench argus-obligation-summary">
           <div
             id="obligation-meta"
@@ -322,9 +327,6 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
               entity_slug={@current_scope.entity.slug}
               documents={cycle_documents(@obligation)}
               required_slots={@doc_slots}
-              uploads={@uploads}
-              upload_slot_target={@upload_slot_target}
-              upload_slot_entries={@upload_slot_entries}
               uploadable?={@can_add_document? and @live?}
               voiding_document_id={@voiding_document_id}
               deleting_document_id={@deleting_document_id}
@@ -341,9 +343,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
             >Close</button>
           </div>
         </div>
-        <form method="dialog" class="modal-backdrop">
-          <button type="button" phx-click="close_completion_modal">close</button>
-        </form>
+        <div class="modal-backdrop" aria-hidden="true"></div>
       </div>
 
       <div
@@ -361,9 +361,6 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
               current_scope={@current_scope}
               entity_slug={@current_scope.entity.slug}
               required_slots={@doc_slots}
-              uploads={@uploads}
-              upload_slot_target={@upload_slot_target}
-              upload_slot_entries={@upload_slot_entries}
               uploadable?={event_uploadable?(@step_files_modal_event, assigns)}
               voiding_document_id={@voiding_document_id}
               deleting_document_id={@deleting_document_id}
@@ -375,9 +372,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
             <button type="button" class="btn" phx-click="close_step_files">Close</button>
           </div>
         </div>
-        <form method="dialog" class="modal-backdrop">
-          <button type="button" phx-click="close_step_files">close</button>
-        </form>
+        <div class="modal-backdrop" aria-hidden="true"></div>
       </div>
 
       <div :if={@show_done_modal} id="m-done-modal" class="modal modal-bottom modal-open">
@@ -522,19 +517,11 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
      |> assign(:show_correct_modal, false)
      |> assign(:step_files_modal_event_id, nil)
      |> assign(:step_files_modal_event, nil)
-     |> assign(:upload_slot_target, nil)
-     |> assign(:upload_slot_entries, %{})
      |> assign(:voiding_document_id, nil)
      |> assign(:deleting_document_id, nil)
      |> assign(:editing_note_id, nil)
      |> assign(:note_form, nil)
      |> assign(:member_options, member_options(scope))
-     |> allow_upload(:document,
-       accept: :any,
-       max_entries: ArgusWeb.LiveUpload.max_document_entries(),
-       max_file_size: ArgusWeb.LiveUpload.max_document_file_size(),
-       auto_upload: true
-     )
      |> load(id, scope)}
   end
 
@@ -677,7 +664,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
      socket
      |> assign(:show_done_modal, false)
      |> assign(:show_completion_modal, true)
-     |> assign(:upload_slot_target, nil)}
+     |> Phoenix.LiveView.push_event("persist_completion_modal", %{})}
   end
 
   def handle_event("close_done_modal", _params, socket) do
@@ -819,7 +806,20 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
          socket
          |> assign(:step_files_modal_event_id, event.id)
          |> assign(:step_files_modal_event, event)
-         |> assign(:upload_slot_target, nil)}
+         |> Phoenix.LiveView.push_event("persist_step_files", %{event_id: event.id})}
+    end
+  end
+
+  def handle_event("restore_step_files", %{"event_id" => event_id}, socket) do
+    case find_event(socket.assigns.obligation.events, event_id) do
+      nil ->
+        {:noreply, Phoenix.LiveView.push_event(socket, "clear_step_files_persist", %{})}
+
+      event ->
+        {:noreply,
+         socket
+         |> assign(:step_files_modal_event_id, event.id)
+         |> assign(:step_files_modal_event, event)}
     end
   end
 
@@ -828,12 +828,18 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
      socket
      |> assign(:step_files_modal_event_id, nil)
      |> assign(:step_files_modal_event, nil)
-     |> assign(:upload_slot_target, nil)
-     |> ArgusWeb.LiveUpload.clear_all_slot_entries()
+     |> Phoenix.LiveView.push_event("clear_step_files_persist", %{})
      |> assign(:voiding_document_id, nil)}
   end
 
   def handle_event("open_completion_modal", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_completion_modal, true)
+     |> Phoenix.LiveView.push_event("persist_completion_modal", %{})}
+  end
+
+  def handle_event("restore_completion_modal", _params, socket) do
     {:noreply, assign(socket, :show_completion_modal, true)}
   end
 
@@ -841,21 +847,12 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
     {:noreply,
      socket
      |> assign(:show_completion_modal, false)
-     |> assign(:upload_slot_target, nil)
-     |> ArgusWeb.LiveUpload.clear_all_slot_entries()
+     |> Phoenix.LiveView.push_event("clear_completion_modal_persist", %{})
      |> assign(:voiding_document_id, nil)}
   end
 
-  def handle_event("select_upload_slot", %{"slot" => slot}, socket) do
-    target = if slot == "additional", do: :additional, else: slot
-    {:noreply, assign(socket, :upload_slot_target, target)}
-  end
-
-  def handle_event("clear_upload_slot", %{"slot" => slot}, socket) do
-    {:noreply,
-     socket
-     |> ArgusWeb.LiveUpload.clear_slot_entry(slot)
-     |> assign(:upload_slot_target, nil)}
+  def handle_event("document_uploaded", _params, socket) do
+    {:noreply, reload(socket)}
   end
 
   def handle_event("request_delete_document", %{"document_id" => document_id}, socket) do
@@ -924,8 +921,6 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
              socket
              |> reload()
              |> assign(:voiding_document_id, nil)
-             |> assign(:upload_slot_target, nil)
-             |> ArgusWeb.LiveUpload.clear_all_slot_entries()
              |> put_flash(:info, "Document voided.")}
 
           :not_authorise ->
@@ -937,58 +932,6 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
           {:error, _} ->
             {:noreply, put_flash(socket, :error, "Could not void document.")}
         end
-    end
-  end
-
-  def handle_event("validate_upload", params, socket) do
-    {:noreply, ArgusWeb.UploadValidate.assign_picked_upload(socket, params)}
-  end
-
-  def handle_event("add_document", params, socket) do
-    scope = socket.assigns.current_scope
-    obligation = socket.assigns.obligation
-    slot = params["slot"]
-    document_slot = if slot in [nil, "additional"], do: nil, else: slot
-
-    ref =
-      Map.get(
-        socket.assigns.upload_slot_entries,
-        ArgusWeb.LiveUpload.slot_key(slot || "additional")
-      )
-
-    event =
-      case params["event_id"] do
-        nil -> DocumentHelpers.upload_event(obligation.events)
-        id -> find_event(obligation.events, id)
-      end
-
-    with %Event{} = event <- event,
-         ref when not is_nil(ref) <- ref do
-      case consume_slot_upload(socket, ref, scope, obligation, event, document_slot) do
-        {:ok, _document} ->
-          {:noreply,
-           socket
-           |> ArgusWeb.LiveUpload.clear_slot_entry(slot || "additional")
-           |> assign(:upload_slot_target, nil)
-           |> reload()
-           |> put_flash(:info, "Document added.")}
-
-        {:error, :not_authorise} ->
-          {:noreply, put_flash(socket, :error, "Not authorized.")}
-
-        {:error, :upload_failed} ->
-          {:noreply, put_flash(socket, :error, "Could not add document.")}
-
-        {:error, :no_entry} ->
-          {:noreply, put_flash(socket, :error, "Choose a file to upload.")}
-
-        {:error, :not_ready} ->
-          {:noreply,
-           put_flash(socket, :error, "File is still uploading. Wait a moment and try again.")}
-      end
-    else
-      nil -> {:noreply, put_flash(socket, :error, "No step available to attach documents to.")}
-      _ -> {:noreply, put_flash(socket, :error, "Choose a file to upload.")}
     end
   end
 
@@ -1158,30 +1101,6 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
   defp event_uploadable?(event, assigns) do
     assigns[:live?] and assigns[:can_add_document?] and event.status in ~w(open in_progress)
   end
-
-  defp consume_slot_upload(socket, ref, scope, obligation, event, document_slot) do
-    ArgusWeb.LiveUpload.consume_slot_entry(socket, ref, fn %{path: path}, entry ->
-      upload = %Plug.Upload{
-        path: path,
-        filename: entry.client_name,
-        content_type: entry.client_type
-      }
-
-      case Obligations.add_document(scope, obligation, event, upload, document_slot) do
-        {:ok, document} -> {:ok, document}
-        :not_authorise -> {:ok, :not_authorise}
-        {:error, _} = error -> {:ok, error}
-      end
-    end)
-    |> normalize_upload_result()
-  end
-
-  defp normalize_upload_result({:error, :no_entry}), do: {:error, :no_entry}
-  defp normalize_upload_result({:error, :not_ready}), do: {:error, :not_ready}
-  defp normalize_upload_result(%Argus.Obligations.EventDocument{} = document), do: {:ok, document}
-  defp normalize_upload_result(:not_authorise), do: {:error, :not_authorise}
-  defp normalize_upload_result({:error, _}), do: {:error, :upload_failed}
-  defp normalize_upload_result(_), do: {:error, :upload_failed}
 
   defp can_add_document?(scope, obligation) do
     Authorization.can?(scope, :edit_obligation) or

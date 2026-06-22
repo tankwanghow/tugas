@@ -42,6 +42,11 @@ defmodule ArgusWeb.Endpoint do
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
+    # Document uploads (DocumentController.create/2) POST multipart bodies up to
+    # the largest per-kind limit (20 MB); the default ~8 MB multipart cap would
+    # reject them before the controller's own size check runs. Headroom for
+    # multipart framing on top of the file bytes.
+    length: 30_000_000,
     json_decoder: Phoenix.json_library()
 
   plug Plug.MethodOverride

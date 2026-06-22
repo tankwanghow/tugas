@@ -79,6 +79,10 @@ defmodule ArgusWeb.Router do
     get "/entities/:entity_slug/obligations/:obligation_id/documents/:id",
         DocumentController,
         :show
+
+    post "/entities/:entity_slug/obligations/:obligation_id/documents",
+         DocumentController,
+         :create
   end
 
   scope "/", ArgusWeb do

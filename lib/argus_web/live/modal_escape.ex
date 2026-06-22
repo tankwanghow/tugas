@@ -16,15 +16,13 @@ defmodule ArgusWeb.ModalEscape do
         socket
         |> Phoenix.Component.assign(:step_files_modal_event_id, nil)
         |> Phoenix.Component.assign(:step_files_modal_event, nil)
-        |> Phoenix.Component.assign(:upload_slot_target, nil)
-        |> ArgusWeb.LiveUpload.clear_all_slot_entries()
+        |> Phoenix.LiveView.push_event("clear_step_files_persist", %{})
         |> Phoenix.Component.assign(:voiding_document_id, nil)
 
       socket.assigns[:show_completion_modal] ->
         socket
         |> Phoenix.Component.assign(:show_completion_modal, false)
-        |> Phoenix.Component.assign(:upload_slot_target, nil)
-        |> ArgusWeb.LiveUpload.clear_all_slot_entries()
+        |> Phoenix.LiveView.push_event("clear_completion_modal_persist", %{})
         |> Phoenix.Component.assign(:voiding_document_id, nil)
 
       socket.assigns[:show_done_modal] ->

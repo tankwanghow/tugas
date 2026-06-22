@@ -33,6 +33,17 @@ config :argus,
   ecto_repos: [Argus.Repo],
   generators: [timestamp_type: :utc_datetime, binary_id: true]
 
+config :argus, :upload_limits,
+  image: 5_000_000,
+  video: 10_000_000,
+  pdf: 20_000_000,
+  other: 20_000_000
+
+config :argus, :upload_client_image_resize,
+  max_edge: 1920,
+  quality: 85,
+  min_bytes: 50_000
+
 # Configure the endpoint
 config :argus, ArgusWeb.Endpoint,
   url: [host: "localhost"],
