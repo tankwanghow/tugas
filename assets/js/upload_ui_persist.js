@@ -57,9 +57,11 @@ export const UploadUiPersist = {
   mounted() {
     this.obligationId = this.el.dataset.obligationId
 
-    this.handleEvent("persist_completion_modal", () => {
+    this.handleEvent("persist_completion_modal", ({slot} = {}) => {
       if (!this.obligationId) return
-      sessionStorage.setItem(modalKey(this.obligationId), "1")
+      // Store the active slot so a remount restores the scoped view; "1" is
+      // the sentinel for the unscoped (all required slots) view.
+      sessionStorage.setItem(modalKey(this.obligationId), slot || "1")
       sessionStorage.removeItem(stepKey(this.obligationId))
     })
 
@@ -114,8 +116,10 @@ export const UploadUiPersist = {
       })
     }
 
-    if (modalFlag === "1") {
-      this.pushEvent("restore_completion_modal", {}, showErr)
+    if (modalFlag) {
+      // "1" is the unscoped sentinel; any other value is the active slot name.
+      const slot = modalFlag === "1" ? null : modalFlag
+      this.pushEvent("restore_completion_modal", {slot}, showErr)
     } else if (stepFlag) {
       this.pushEvent("restore_step_files", {event_id: stepFlag}, showErr)
     } else {

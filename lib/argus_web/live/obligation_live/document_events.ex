@@ -41,6 +41,7 @@ defmodule ArgusWeb.ObligationLive.DocumentEvents do
      socket
      |> Phoenix.Component.assign(:show_done_modal, false)
      |> Phoenix.Component.assign(:show_completion_modal, true)
+     |> Phoenix.Component.assign(:active_completion_slot, nil)
      |> Phoenix.LiveView.push_event("persist_completion_modal", %{})}
   end
 
@@ -75,15 +76,21 @@ defmodule ArgusWeb.ObligationLive.DocumentEvents do
     {:noreply, close_document_modal(socket, :step_files)}
   end
 
-  def dispatch("open_completion_modal", _params, socket, _reload) do
+  def dispatch("open_completion_modal", params, socket, _reload) do
+    slot = blank_to_nil(params["slot"])
+
     {:noreply,
      socket
      |> Phoenix.Component.assign(:show_completion_modal, true)
-     |> Phoenix.LiveView.push_event("persist_completion_modal", %{})}
+     |> Phoenix.Component.assign(:active_completion_slot, slot)
+     |> Phoenix.LiveView.push_event("persist_completion_modal", %{slot: slot})}
   end
 
-  def dispatch("restore_completion_modal", _params, socket, _reload) do
-    {:noreply, Phoenix.Component.assign(socket, :show_completion_modal, true)}
+  def dispatch("restore_completion_modal", params, socket, _reload) do
+    {:noreply,
+     socket
+     |> Phoenix.Component.assign(:show_completion_modal, true)
+     |> Phoenix.Component.assign(:active_completion_slot, blank_to_nil(params["slot"]))}
   end
 
   def dispatch("close_completion_modal", _params, socket, _reload) do
@@ -201,6 +208,7 @@ defmodule ArgusWeb.ObligationLive.DocumentEvents do
   defp close_document_modal(socket, :completion) do
     socket
     |> Phoenix.Component.assign(:show_completion_modal, false)
+    |> Phoenix.Component.assign(:active_completion_slot, nil)
     |> Phoenix.LiveView.push_event("clear_completion_modal_persist", %{})
     |> clear_document_ui_state()
   end
@@ -210,4 +218,8 @@ defmodule ArgusWeb.ObligationLive.DocumentEvents do
     |> Phoenix.Component.assign(:voiding_document_id, nil)
     |> Phoenix.Component.assign(:deleting_document_id, nil)
   end
+
+  defp blank_to_nil(nil), do: nil
+  defp blank_to_nil(""), do: nil
+  defp blank_to_nil(value) when is_binary(value), do: value
 end

@@ -38,6 +38,7 @@ defmodule ArgusWeb.ObligationDocumentThumb do
             id={@manage_id}
             type="button"
             phx-click="open_completion_modal"
+            phx-value-slot={@label}
             class="flex h-full w-full items-center justify-center border-2 border-dashed border-base-300 text-base-content/50 transition-colors hover:border-primary hover:text-primary cursor-pointer"
             title="Upload completion document"
           >
@@ -61,6 +62,7 @@ defmodule ArgusWeb.ObligationDocumentThumb do
             id={@manage_id}
             type="button"
             phx-click="open_completion_modal"
+            phx-value-slot={@label}
             class="btn btn-xs btn-circle btn-ghost absolute top-0.5 right-0.5 z-10 bg-base-100/80"
             aria-label={"Manage #{@label}"}
           >

@@ -22,6 +22,7 @@ defmodule ArgusWeb.ModalEscape do
       socket.assigns[:show_completion_modal] ->
         socket
         |> Phoenix.Component.assign(:show_completion_modal, false)
+        |> Phoenix.Component.assign(:active_completion_slot, nil)
         |> Phoenix.LiveView.push_event("clear_completion_modal_persist", %{})
         |> Phoenix.Component.assign(:voiding_document_id, nil)
 

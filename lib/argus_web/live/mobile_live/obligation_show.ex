@@ -323,7 +323,11 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
 
       <div :if={@show_completion_modal} id="m-completion-modal" class="modal modal-bottom modal-open">
         <div class="modal-box max-h-[85vh] overflow-y-auto max-w-lg">
-          <h3 class="font-bold text-lg">Completion documents</h3>
+          <h3 class="font-bold text-lg">
+            {if @active_completion_slot,
+              do: "Completion document: #{@active_completion_slot}",
+              else: "Completion documents"}
+          </h3>
           <div class="mt-3">
             <.completion_documents
               id_prefix="m-"
@@ -331,7 +335,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
               current_scope={@current_scope}
               entity_slug={@current_scope.entity.slug}
               documents={cycle_documents(@obligation)}
-              required_slots={@doc_slots}
+              required_slots={DocumentHelpers.scoped_slots(@doc_slots, @active_completion_slot)}
               uploadable?={@can_add_document? and @live?}
               voiding_document_id={@voiding_document_id}
               deleting_document_id={@deleting_document_id}
@@ -519,6 +523,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
      |> assign(:show_skip_modal, false)
      |> assign(:show_edit_modal, false)
      |> assign(:show_completion_modal, false)
+     |> assign(:active_completion_slot, nil)
      |> assign(:show_correct_modal, false)
      |> assign(:step_files_modal_event_id, nil)
      |> assign(:step_files_modal_event, nil)

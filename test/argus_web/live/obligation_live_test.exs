@@ -176,7 +176,7 @@ defmodule ArgusWeb.ObligationLiveTest do
     assert render(solo_view) =~ assignee.email
   end
 
-  test "completion modal: shows uploaded files for both required slots", %{conn: conn} do
+  test "completion modal: clicking a required slot scopes the modal to that slot", %{conn: conn} do
     manager = Argus.EntitiesFixtures.manager_scope_fixture()
     conn = log_in_user(conn, manager.user)
     member = member_fixture(manager.entity)
@@ -199,13 +199,17 @@ defmodule ArgusWeb.ObligationLiveTest do
     {:ok, view, _html} =
       live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}")
 
+    # Clicking the receipt slot scopes the modal to only that slot's row.
     view |> element("#open-completion-slot-receipt") |> render_click()
-
-    assert render(view) =~ "receipt.pdf"
-    assert render(view) =~ "form.pdf"
-    # Both slots satisfied: their Choose file buttons are gone.
+    assert has_element?(view, "#completion-slot-receipt", "receipt.pdf")
+    refute has_element?(view, "#completion-slot-statutory_form")
     refute has_element?(view, "#select-slot-receipt")
-    refute has_element?(view, "#select-slot-statutory_form")
+    view |> element("#close-completion-modal") |> render_click()
+
+    # Clicking the other slot scopes to it instead.
+    view |> element("#open-completion-slot-statutory_form") |> render_click()
+    assert has_element?(view, "#completion-slot-statutory_form", "form.pdf")
+    refute has_element?(view, "#completion-slot-receipt")
   end
 
   test "completion slot offers a direct-upload Choose file button when unsatisfied", %{
@@ -791,18 +795,24 @@ defmodule ArgusWeb.ObligationLiveTest do
     {:ok, view, _html} =
       live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}")
 
-    view |> element("#open-completion-slot-receipt") |> render_click()
-
-    # receipt satisfied (shows file + Delete), form still unsatisfied (shows uploader).
     obligation = Obligations.get_obligation!(manager, obligation.id)
     [open_event] = Enum.filter(obligation.events, &(&1.status == "open"))
     doc = hd(open_event.documents)
 
+    # receipt slot, scoped on its own: satisfied (shows file + Delete, no uploader).
+    view |> element("#open-completion-slot-receipt") |> render_click()
     assert has_element?(view, "#completion-slot-receipt", "receipt.pdf")
     assert has_element?(view, "#delete-doc-#{doc.id}")
-    assert has_element?(view, "#select-slot-form")
+    refute has_element?(view, "#completion-slot-form")
+    refute has_element?(view, "#select-slot-receipt")
     # the file attached to the cycle's workable (open) event
     assert doc.document_slot == "receipt"
+    view |> element("#close-completion-modal") |> render_click()
+
+    # form slot, scoped on its own: unsatisfied (shows uploader).
+    view |> element("#open-completion-slot-form") |> render_click()
+    assert has_element?(view, "#select-slot-form")
+    refute has_element?(view, "#completion-slot-receipt")
   end
 
   test "completion modal: voided required file shows in voided section, downloadable", %{

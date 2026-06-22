@@ -67,6 +67,17 @@ defmodule ArgusWeb.ObligationLive.DocumentHelpers do
   end
 
   @doc """
+  Narrows the completion modal to a single clicked slot when one is active,
+  otherwise returns all required slots (the Done-flow / unscoped view). A stale
+  active slot (no longer required) falls back to showing all slots.
+  """
+  def scoped_slots(slots, nil), do: slots
+
+  def scoped_slots(slots, active) when is_binary(active) do
+    if active in slots, do: [active], else: slots
+  end
+
+  @doc """
   Partitions cycle documents for the cycle-level required view.
   """
   def completion_view(documents, required_slots) do
