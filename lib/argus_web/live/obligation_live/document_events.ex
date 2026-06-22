@@ -91,7 +91,19 @@ defmodule ArgusWeb.ObligationLive.DocumentEvents do
   end
 
   def dispatch("document_uploaded", _params, socket, reload) do
-    {:noreply, reload.(socket)}
+    socket = reload.(socket)
+
+    # Close whichever document modal the upload came from, so a successful
+    # upload dismisses the form. close_document_modal/2 also clears the
+    # sessionStorage persistence, so a reconnect won't re-open it.
+    socket =
+      cond do
+        socket.assigns[:show_completion_modal] -> close_document_modal(socket, :completion)
+        socket.assigns[:step_files_modal_event_id] -> close_document_modal(socket, :step_files)
+        true -> socket
+      end
+
+    {:noreply, socket}
   end
 
   def dispatch("request_delete_document", %{"document_id" => document_id}, socket, _reload) do
@@ -120,8 +132,7 @@ defmodule ArgusWeb.ObligationLive.DocumentEvents do
             {:noreply,
              socket
              |> reload.()
-             |> Phoenix.Component.assign(:deleting_document_id, nil)
-             |> Phoenix.LiveView.put_flash(:info, "Document deleted.")}
+             |> Phoenix.Component.assign(:deleting_document_id, nil)}
 
           :not_authorise ->
             {:noreply, Phoenix.LiveView.put_flash(socket, :error, "Not authorized.")}
@@ -159,8 +170,7 @@ defmodule ArgusWeb.ObligationLive.DocumentEvents do
             {:noreply,
              socket
              |> reload.()
-             |> Phoenix.Component.assign(:voiding_document_id, nil)
-             |> Phoenix.LiveView.put_flash(:info, "Document voided.")}
+             |> Phoenix.Component.assign(:voiding_document_id, nil)}
 
           :not_authorise ->
             {:noreply,

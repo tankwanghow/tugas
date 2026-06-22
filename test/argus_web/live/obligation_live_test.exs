@@ -324,7 +324,6 @@ defmodule ArgusWeb.ObligationLiveTest do
     view |> element("#delete-doc-#{document.id}") |> render_click()
     assert has_element?(view, "#confirm-delete-doc-#{document.id}")
     view |> element("#confirm-delete-doc-#{document.id}") |> render_click()
-    assert render(view) =~ "Document deleted"
     assert has_element?(view, "#select-slot-receipt")
   end
 
@@ -909,6 +908,10 @@ defmodule ArgusWeb.ObligationLiveTest do
     view |> element("#step-files-btn-#{open_event.id}") |> render_click()
     view |> element("#obligation-show") |> render_hook("document_uploaded", %{})
 
+    # A successful upload auto-closes the modal; reopen it to confirm the
+    # additional file is filed under this step.
+    refute has_element?(view, "#step-files-#{open_event.id}")
+    view |> element("#step-files-btn-#{open_event.id}") |> render_click()
     assert has_element?(view, "#step-files-#{open_event.id}", "notes.pdf")
 
     obligation = Obligations.get_obligation!(manager, obligation.id)
