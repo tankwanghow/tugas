@@ -143,6 +143,10 @@ export const UploadDirect = {
   // Transient input lives in document.body, outside LiveView's DOM, so a
   // remount triggered by backgrounding during the pick can't destroy it.
   pick() {
+    // Fresh selection: clear any stale cancellation from a prior pick. This is
+    // the only place that resets the flag, so a cancel() mid-compression/upload
+    // survives the clearBusy() that cancel itself triggers.
+    this._cancelled = false
     const input = document.createElement("input")
     input.type = "file"
     input.style.position = "fixed"
@@ -247,7 +251,6 @@ export const UploadDirect = {
 
   setCompressing() {
     this._busy = true
-    this._cancelled = false
     if (this._origLabel === undefined) this._origLabel = this.el.textContent
     this.el.textContent = "Cancel"
   },
@@ -261,7 +264,6 @@ export const UploadDirect = {
 
   setBusy(percent) {
     this._busy = true
-    this._cancelled = false
     if (this._origLabel === undefined) this._origLabel = this.el.textContent
     this.el.textContent =
       percent > 0 && percent < 100 ? `Cancel (${percent}%)` : "Cancel"
@@ -269,7 +271,6 @@ export const UploadDirect = {
 
   clearBusy() {
     this._busy = false
-    this._cancelled = false
     this._xhr = null
     if (this._origLabel !== undefined) this.el.textContent = this._origLabel
   },
