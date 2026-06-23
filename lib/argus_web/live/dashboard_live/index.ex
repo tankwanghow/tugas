@@ -141,7 +141,7 @@ defmodule ArgusWeb.DashboardLive.Index do
           :if={@row.cycle_status != :live}
           cycle_status={@row.cycle_status}
           in_error={!is_nil(@row.obligation.completed_in_error_at)}
-          detail={completion_detail(@row)}
+          obligation={@row.obligation}
         />
       </div>
       <div class="flex text-sm gap-1">
@@ -259,18 +259,5 @@ defmodule ArgusWeb.DashboardLive.Index do
     ~H"""
     <div>{assigns.email}</div>
     """
-  end
-
-  defp completion_detail(%{cycle_status: :completed, obligation: o}),
-    do: format_completed_at(o.completed_at)
-
-  defp completion_detail(_), do: nil
-
-  defp format_completed_at(nil), do: "—"
-
-  defp format_completed_at(%DateTime{} = dt) do
-    dt
-    |> DateTime.to_date()
-    |> format_date()
   end
 end

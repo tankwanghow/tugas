@@ -30,6 +30,7 @@ defmodule ArgusWeb.MobileLive.Components do
             :if={@row.cycle_status != :live}
             cycle_status={@row.cycle_status}
             in_error={!is_nil(@row.obligation.completed_in_error_at)}
+            obligation={@row.obligation}
           />
           <.urgency_badge
             :if={@row.cycle_status == :live and @row.obligation.due_by}
