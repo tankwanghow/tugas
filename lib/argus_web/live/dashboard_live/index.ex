@@ -47,7 +47,7 @@ defmodule ArgusWeb.DashboardLive.Index do
               </button>
             </div>
             <form id="obligation-status-filter" phx-change="set_status">
-              <select name="lifecycle" class="select select-sm">
+              <select name="lifecycle" class="select">
                 <option
                   :for={{value, label} <- Index.lifecycles()}
                   value={value}
@@ -58,7 +58,7 @@ defmodule ArgusWeb.DashboardLive.Index do
               </select>
             </form>
             <form id="obligation-sort-filter" phx-change="set_sort">
-              <select id="obligation-sort" name="sort" class="select select-sm">
+              <select id="obligation-sort" name="sort" class="select">
                 <option
                   :for={{value, label} <- Index.sorts(@lifecycle)}
                   value={value}
@@ -76,7 +76,7 @@ defmodule ArgusWeb.DashboardLive.Index do
               phx-keyup="search"
               phx-debounce="150"
               value={@query}
-              class="input input-sm w-full sm:w-48 sm:ml-auto"
+              class="input w-full sm:w-48 sm:ml-auto"
             />
           </div>
         </div>

@@ -11,16 +11,29 @@ defmodule ArgusWeb.MobileLive.Dashboard do
     <Layouts.mobile_app flash={@flash} current_scope={@current_scope} active={:home}>
       <div class="sticky top-0 z-30 px-4 py-3 bg-base-100/95 backdrop-blur border-b border-base-200 space-y-2">
         <h1 class="text-lg font-semibold truncate">{@current_scope.entity.name}</h1>
-        <input
-          id="m-obligation-search"
-          type="search"
-          name="q"
-          placeholder="Search title, type, assignee…"
-          phx-keyup="search"
-          phx-debounce="150"
-          value={@query}
-          class="input w-full"
-        />
+        <div class="flex">
+          <input
+            id="m-obligation-search"
+            type="search"
+            name="q"
+            placeholder="Search title, type, assignee…"
+            phx-keyup="search"
+            phx-debounce="150"
+            value={@query}
+            class="input w-full"
+          />
+          <form id="m-obligation-status-filter" phx-change="set_status">
+            <select name="lifecycle" class="select">
+              <option
+                :for={{value, label} <- Index.lifecycles()}
+                value={value}
+                selected={@lifecycle == Index.parse_lifecycle(value)}
+              >
+                {label}
+              </option>
+            </select>
+          </form>
+        </div>
         <div class="flex items-center gap-2">
           <div id="m-obligation-scope-toggle" class="tabs tabs-box flex-1">
             <button
@@ -42,19 +55,8 @@ defmodule ArgusWeb.MobileLive.Dashboard do
               Team
             </button>
           </div>
-          <form id="m-obligation-status-filter" phx-change="set_status">
-            <select name="lifecycle" class="select select-sm">
-              <option
-                :for={{value, label} <- Index.lifecycles()}
-                value={value}
-                selected={@lifecycle == Index.parse_lifecycle(value)}
-              >
-                {label}
-              </option>
-            </select>
-          </form>
           <form id="m-obligation-sort-filter" phx-change="set_sort">
-            <select id="m-obligation-sort" name="sort" class="select select-sm">
+            <select id="m-obligation-sort" name="sort" class="select">
               <option
                 :for={{value, label} <- Index.sorts(@lifecycle)}
                 value={value}
