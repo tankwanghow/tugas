@@ -6,8 +6,8 @@ defmodule ArgusWeb.DashboardFilter do
   alias ArgusWeb.ObligationLive.IndexHelpers, as: Index
 
   @session_key "dashboard_filters"
-  @lifecycles ~w(live completed skipped all)
-  @sorts ~w(due_asc due_desc title urgency)
+  @lifecycles ~w(live someday completed skipped all)
+  @sorts ~w(due_asc due_desc title urgency recent)
 
   def assign_filters(socket, session) do
     filters = load(session, socket.assigns.current_scope)

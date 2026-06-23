@@ -44,6 +44,22 @@ defmodule ArgusWeb.ObligationLive.IndexHelpersTest do
     assert Enum.all?(page.rows, &Map.has_key?(&1, :tier))
   end
 
+  test "someday lifecycle: status atom, label, sorts, effective_sort" do
+    assert Index.status_atom(false, :someday) == :someday
+    assert Index.status_atom(true, :someday) == :my_someday
+    assert Index.parse_lifecycle("someday") == :someday
+    assert Index.lifecycle_label(:someday) == "Someday"
+
+    assert {"recent", "Recently added"} = List.keyfind(Index.sorts(:someday), "recent", 0)
+    refute List.keyfind(Index.sorts(:someday), "urgency", 0)
+    refute List.keyfind(Index.sorts(:live), "recent", 0)
+
+    assert Index.effective_sort(:recent, :someday) == :recent
+    assert Index.effective_sort(:recent, :live) == :due_asc
+    assert Index.effective_sort(:due_asc, :someday) == :recent
+    assert Index.parse_sort("recent") == :recent
+  end
+
   describe "load_page urgency on live" do
     setup do
       manager = Argus.EntitiesFixtures.manager_scope_fixture()

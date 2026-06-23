@@ -5,7 +5,7 @@ defmodule ArgusWeb.ObligationLive.IndexHelpers do
   alias Argus.Obligations
   alias Argus.Obligations.{Obligation, Urgency}
 
-  @lifecycles ~w(live completed skipped all)a
+  @lifecycles ~w(live someday completed skipped all)a
   @page_size 25
   @urgency_window_days 365
   @urgency_rank %{overdue: 0, due_soon: 1, ok: 2}
@@ -17,22 +17,30 @@ defmodule ArgusWeb.ObligationLive.IndexHelpers do
   def default_mine?(%Scope{role: :member}), do: true
   def default_mine?(_scope), do: false
 
+  def parse_lifecycle("someday"), do: :someday
   def parse_lifecycle("completed"), do: :completed
   def parse_lifecycle("skipped"), do: :skipped
   def parse_lifecycle("all"), do: :all
   def parse_lifecycle(_), do: :live
 
   def lifecycle_label(:live), do: "Live"
+  def lifecycle_label(:someday), do: "Someday"
   def lifecycle_label(:completed), do: "Completed"
   def lifecycle_label(:skipped), do: "Skipped"
   def lifecycle_label(:all), do: "All"
 
   @doc "Combined status atom for `Obligations.list_obligations/2`."
   def status_atom(true, :live), do: :my_live
+  def status_atom(true, :someday), do: :my_someday
   def status_atom(true, :completed), do: :my_completed
   def status_atom(true, :skipped), do: :my_skipped
   def status_atom(true, :all), do: :my_all
   def status_atom(false, lifecycle), do: lifecycle
+
+  def empty_message(mine?, :someday) do
+    who = if mine?, do: " assigned to you", else: ""
+    "No someday duties#{who}."
+  end
 
   def empty_message(mine?, lifecycle) do
     who = if mine?, do: " assigned to you", else: ""
@@ -54,17 +62,25 @@ defmodule ArgusWeb.ObligationLive.IndexHelpers do
       {"title", "Title A–Z"}
     ]
 
+  def sorts(:someday),
+    do: [{"recent", "Recently added"}, {"title", "Title A–Z"}]
+
   def sorts(_lifecycle),
     do: [{"due_asc", "Due soonest"}, {"due_desc", "Due latest"}, {"title", "Title A–Z"}]
 
   def parse_sort("due_desc"), do: :due_desc
   def parse_sort("title"), do: :title
   def parse_sort("urgency"), do: :urgency
+  def parse_sort("recent"), do: :recent
   def parse_sort(_), do: :due_asc
 
-  def effective_sort(:urgency, :live), do: :urgency
-  def effective_sort(:urgency, _lifecycle), do: :due_asc
-  def effective_sort(sort, _lifecycle), do: sort
+  def effective_sort(sort, lifecycle) do
+    allowed = Enum.map(sorts(lifecycle), fn {v, _} -> parse_sort(v) end)
+    if sort in allowed, do: sort, else: default_sort(lifecycle)
+  end
+
+  defp default_sort(:someday), do: :recent
+  defp default_sort(_), do: :due_asc
 
   def load_rows(scope, today, mine?, lifecycle, query) do
     status = status_atom(mine?, lifecycle)
