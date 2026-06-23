@@ -28,4 +28,9 @@ defmodule Argus.Obligations.RecurrenceTest do
     type = %Type{recurring_interval: "none"}
     refute Recurrence.recurring?(type)
   end
+
+  test "nil due_by returns nil regardless of interval" do
+    type = %Type{recurring_interval: "monthly"}
+    assert Recurrence.next_due_suggestion(type, nil) == nil
+  end
 end

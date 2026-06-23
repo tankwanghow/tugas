@@ -12,6 +12,7 @@ defmodule Argus.Obligations.Recurrence do
   def recurring?(%Type{recurring_interval: "none"}), do: false
   def recurring?(%Type{}), do: true
 
+  def next_due_suggestion(_type, nil), do: nil
   def next_due_suggestion(%Type{recurring_interval: "none"}, _due_by), do: nil
   def next_due_suggestion(%Type{recurring_interval: "custom"}, _due_by), do: nil
 

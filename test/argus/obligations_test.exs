@@ -95,6 +95,28 @@ defmodule Argus.ObligationsTest do
     end
   end
 
+  describe "update_obligation/3 — audit log" do
+    test "does not write a 'someday' audit row when editing a dated obligation" do
+      scope = manager_scope_fixture()
+      type = type_fixture(scope.entity)
+
+      {:ok, obligation} =
+        Obligations.create_obligation(scope, %{
+          title: "Original title",
+          obligation_type_id: type.id,
+          due_by: ~D[2026-06-15],
+          open_note: "open"
+        })
+
+      assert {:ok, _updated} =
+               Obligations.update_obligation(scope, obligation, %{title: "Updated title"})
+
+      fields = Obligations.list_audit_logs(obligation) |> Enum.map(& &1.field)
+      refute "someday" in fields
+      assert "title" in fields
+    end
+  end
+
   describe "completed-in-error schema" do
     test "new correction fields default to nil on a created obligation" do
       manager = Argus.EntitiesFixtures.manager_scope_fixture()

@@ -1083,6 +1083,23 @@ defmodule ArgusWeb.ObligationLiveTest do
     assert has_element?(replacement_view, "#replaces-banner")
   end
 
+  test "show page does not crash for a Someday duty of a recurring type", %{conn: conn} do
+    manager = Argus.EntitiesFixtures.manager_scope_fixture()
+    conn = log_in_user(conn, manager.user)
+    type = type_fixture(manager.entity, recurring_interval: "monthly")
+
+    {:ok, ob} =
+      Obligations.create_obligation(manager, %{
+        title: "Monthly someday",
+        obligation_type_id: type.id,
+        someday: true,
+        open_note: "n"
+      })
+
+    {:ok, _view, html} = live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{ob.id}")
+    assert html =~ "Monthly someday"
+  end
+
   test "show page renders a Someday duty and can promote it to a due date", %{conn: conn} do
     manager = Argus.EntitiesFixtures.manager_scope_fixture()
     conn = log_in_user(conn, manager.user)

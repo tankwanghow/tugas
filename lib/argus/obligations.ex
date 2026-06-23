@@ -1089,7 +1089,7 @@ defmodule Argus.Obligations do
     Ecto.Multi.new()
     |> Ecto.Multi.update(:obligation, changeset)
     |> Ecto.Multi.run(:audit, fn repo, %{obligation: updated} ->
-      Enum.each(changeset.changes, fn {field, new_value} ->
+      Enum.each(Map.drop(changeset.changes, [:someday]), fn {field, new_value} ->
         old_value = Map.get(obligation, field)
         audit_field = audit_field_name(field)
 
