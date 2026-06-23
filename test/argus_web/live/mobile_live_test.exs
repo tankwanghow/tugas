@@ -452,6 +452,28 @@ defmodule ArgusWeb.MobileLiveTest do
     assert has_element?(view, "#m-obligation-sort option[value='urgency']")
   end
 
+  test "mobile Someday lifecycle lists dateless duties without urgency/due chrome", %{conn: conn} do
+    manager = Argus.EntitiesFixtures.manager_scope_fixture()
+    conn = mobile_conn(conn, manager)
+    type = type_fixture(manager.entity)
+
+    {:ok, _} =
+      Obligations.create_obligation(manager, %{
+        title: "Tidy the archive",
+        obligation_type_id: type.id,
+        someday: true,
+        open_note: "n"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/m/#{manager.entity.slug}")
+    view |> form("#m-obligation-status-filter", %{lifecycle: "someday"}) |> render_change()
+
+    html = view |> element("#mobile-obligations") |> render()
+    assert html =~ "Tidy the archive"
+    refute html =~ "overdue"
+    refute html =~ "due "
+  end
+
   test "mobile: new-obligation form creates and redirects to the mobile show page", %{conn: conn} do
     manager = Argus.EntitiesFixtures.manager_scope_fixture()
     conn = mobile_conn(conn, manager)
