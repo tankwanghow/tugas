@@ -5,19 +5,27 @@ defmodule ArgusWeb.MobileAuthTest do
   import Argus.AccountsFixtures
 
   alias Argus.Accounts
+  alias Argus.Entities.Membership
+  alias Argus.Repo
 
   @mobile_ua "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"
+  @standalone_shell_class "min-h-screen bg-base-200 flex flex-col items-center justify-center"
+
+  defp assert_standalone_shell(html) do
+    assert html =~ @standalone_shell_class
+    refute html =~ ~s|id="argus-shell"|
+    refute html =~ "Get started"
+  end
 
   describe "unified auth UI" do
     test "register and log-in use mobile_standalone on desktop UA", %{conn: conn} do
       {:ok, _lv, register_html} = live(conn, ~p"/users/register")
       assert register_html =~ "Register"
-      assert register_html =~ "Argus"
-      refute register_html =~ ~s|id="entity-nav"|
+      assert_standalone_shell(register_html)
 
       {:ok, view, login_html} = live(conn, ~p"/users/log-in")
       assert login_html =~ "Log in with email"
-      refute login_html =~ ~s|id="entity-nav"|
+      assert_standalone_shell(login_html)
       assert has_element?(view, "#login_form_password")
     end
 
@@ -26,10 +34,11 @@ defmodule ArgusWeb.MobileAuthTest do
 
       {:ok, _lv, html} = live(conn, ~p"/users/register")
       assert html =~ "Register"
-      refute html =~ ~s|id="entity-nav"|
+      assert_standalone_shell(html)
 
       {:ok, view, html} = live(conn, ~p"/users/log-in")
       assert html =~ "Log in with email"
+      assert_standalone_shell(html)
       assert has_element?(view, "#login_form_password")
     end
 
@@ -78,6 +87,46 @@ defmodule ArgusWeb.MobileAuthTest do
       assert redirected_to(conn) == ~p"/m/#{scope.entity.slug}"
     end
 
+    test "mobile UA full register then confirm lands on mobile dashboard when member", %{
+      conn: conn
+    } do
+      admin_scope = Argus.EntitiesFixtures.entity_scope_fixture()
+      conn = put_req_header(conn, "user-agent", @mobile_ua)
+
+      {:ok, lv, _html} = live(conn, ~p"/users/register")
+
+      email = unique_user_email()
+
+      render_submit(form(lv, "#registration_form", user: valid_user_attributes(email: email)))
+
+      user = Accounts.get_user_by_email(email)
+
+      %Membership{
+        user_id: user.id,
+        entity_id: admin_scope.entity.id,
+        role: "member",
+        accepted_at: DateTime.utc_now(:second)
+      }
+      |> Membership.changeset(%{})
+      |> Repo.insert!()
+
+      token =
+        extract_user_token(fn url ->
+          Accounts.deliver_login_instructions(user, url)
+        end)
+
+      {:ok, confirm_lv, html} = live(conn, ~p"/users/log-in/#{token}")
+      assert html =~ "Confirm and stay logged in"
+      assert_standalone_shell(html)
+
+      confirm_form = form(confirm_lv, "#confirmation_form", %{"user" => %{"token" => token}})
+      render_submit(confirm_form)
+
+      conn = follow_trigger_action(confirm_form, conn)
+      assert redirected_to(conn) == ~p"/m/#{admin_scope.entity.slug}"
+      assert Accounts.get_user!(user.id).confirmed_at
+    end
+
     test "confirmation uses standalone shell", %{conn: conn} do
       user = unconfirmed_user_fixture()
 
@@ -89,6 +138,7 @@ defmodule ArgusWeb.MobileAuthTest do
       {:ok, _lv, html} = live(conn, ~p"/users/log-in/#{token}")
       assert html =~ "Confirm and stay logged in"
       assert html =~ "confirmation_form"
+      assert_standalone_shell(html)
     end
   end
 end
