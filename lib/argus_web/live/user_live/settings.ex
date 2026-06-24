@@ -14,6 +14,7 @@ defmodule ArgusWeb.UserLive.Settings do
         password_form={@password_form}
         current_email={@current_email}
         trigger_submit={@trigger_submit}
+        back_path={@back_path}
       />
     </Layouts.mobile_simple>
 
@@ -23,6 +24,7 @@ defmodule ArgusWeb.UserLive.Settings do
         password_form={@password_form}
         current_email={@current_email}
         trigger_submit={@trigger_submit}
+        back_path={@back_path}
       />
     </Layouts.app>
     """
@@ -46,10 +48,12 @@ defmodule ArgusWeb.UserLive.Settings do
     user = socket.assigns.current_scope.user
     email_changeset = Accounts.change_user_email(user, %{}, validate_unique: false)
     password_changeset = Accounts.change_user_password(user, %{}, hash_password: false)
+    mobile? = ArgusWeb.Device.mobile_from_socket?(socket)
 
     socket =
       socket
-      |> assign(:mobile?, ArgusWeb.Device.mobile_from_socket?(socket))
+      |> assign(:mobile?, mobile?)
+      |> assign(:back_path, back_path(socket.assigns.current_scope, mobile?))
       |> assign(:current_email, user.email)
       |> assign(:email_form, to_form(email_changeset))
       |> assign(:password_form, to_form(password_changeset))
@@ -58,14 +62,28 @@ defmodule ArgusWeb.UserLive.Settings do
     {:ok, socket}
   end
 
+  defp back_path(%{entity: %{slug: slug}}, true), do: ~p"/m/#{slug}"
+  defp back_path(%{entity: %{slug: slug}}, false), do: ~p"/entities/#{slug}"
+  defp back_path(_scope, _mobile?), do: ~p"/entities"
+
   attr :email_form, :any, required: true
   attr :password_form, :any, required: true
   attr :current_email, :string, required: true
   attr :trigger_submit, :boolean, required: true
+  attr :back_path, :string, required: true
 
   defp settings_body(assigns) do
     ~H"""
     <div class="mx-auto max-w-lg space-y-6">
+      <div>
+        <.link
+          navigate={@back_path}
+          class="inline-flex items-center gap-1 text-sm text-base-content/60 hover:text-base-content"
+        >
+          <.icon name="hero-arrow-left-micro" class="size-4" /> Back
+        </.link>
+      </div>
+
       <div class="text-center">
         <.header>
           Account Settings
