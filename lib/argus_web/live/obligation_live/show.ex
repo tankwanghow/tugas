@@ -91,7 +91,7 @@ defmodule ArgusWeb.ObligationLive.Show do
             <div :if={@obligation.due_by} class="flex flex-wrap items-center gap-1.5 min-w-0 text-xs">
               <span class="argus-meta-label">Due</span>
               <span class="font-medium text-base-content">{format_date(@obligation.due_by)}</span>
-              <span :if={@cycle_status == :skipped} class="text-base-content/60">· skipped</span>
+              <%!-- <span :if={@cycle_status == :skipped} class="text-base-content/60">· skipped</span> --%>
             </div>
             <div :if={is_nil(@obligation.due_by)} class="font-medium text-base-content">
               <span class="text-success">No Due Date</span>

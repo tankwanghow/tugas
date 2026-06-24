@@ -43,9 +43,9 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
               <div :if={is_nil(@obligation.due_by)} class="font-medium text-base-content shrink-0">
                 <span class="text-success">No Due Date</span>
               </div>
-              <div :if={@cycle_status == :skipped} class="text-warning shrink-0">
+              <%!-- <div :if={@cycle_status == :skipped} class="text-warning shrink-0">
                 Skipped
-              </div>
+              </div> --%>
             </div>
             <div class="flex flex-wrap items-center gap-1.5">
               <span

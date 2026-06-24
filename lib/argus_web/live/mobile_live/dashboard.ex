@@ -12,6 +12,7 @@ defmodule ArgusWeb.MobileLive.Dashboard do
       <div class="sticky top-0 z-30 px-4 py-3 bg-base-100/95 backdrop-blur border-b border-base-200 space-y-2">
         <h1 class="text-lg font-semibold truncate">{@current_scope.entity.name}</h1>
         <div class="flex">
+          <div class="w-[65%]">
           <input
             id="m-obligation-search"
             type="search"
@@ -22,6 +23,8 @@ defmodule ArgusWeb.MobileLive.Dashboard do
             value={@query}
             class="input w-full"
           />
+          </div>
+          <div class="w-[35%]">
           <form id="m-obligation-status-filter" phx-change="set_status">
             <select name="lifecycle" class="select">
               <option
@@ -33,6 +36,7 @@ defmodule ArgusWeb.MobileLive.Dashboard do
               </option>
             </select>
           </form>
+          </div>
         </div>
         <div class="flex items-center gap-2">
           <div id="m-obligation-scope-toggle" class="tabs tabs-box flex-1">
