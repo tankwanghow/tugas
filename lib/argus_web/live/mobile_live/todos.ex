@@ -8,7 +8,11 @@ defmodule ArgusWeb.MobileLive.Todos do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.mobile_app flash={@flash} current_scope={@current_scope} active={:todos}>
+    <Layouts.mobile_app
+      flash={@flash}
+      current_scope={@current_scope}
+      active={if(@live_action == :new, do: :new_todo, else: :todos)}
+    >
       <div id="m-todos-page" class="p-4">
         <div class="flex items-center justify-between gap-2 mb-3">
           <div class="font-semibold text-xl">Todos</div>
@@ -169,8 +173,24 @@ defmodule ArgusWeb.MobileLive.Todos do
   end
 
   @impl true
+  def handle_params(_params, _uri, socket) do
+    socket =
+      case socket.assigns.live_action do
+        :new ->
+          IndexHelpers.open_modal(socket, %Todo{}, nil, "New todo", "Create")
+
+        :index ->
+          IndexHelpers.close_modal(socket)
+      end
+
+    {:noreply, socket}
+  end
+
+  @impl true
   def handle_event("new", _params, socket) do
-    {:noreply, IndexHelpers.open_modal(socket, %Todo{}, nil, "New todo", "Create")}
+    {:noreply,
+     socket
+     |> push_patch(to: ~p"/m/#{socket.assigns.current_scope.entity.slug}/todos/new")}
   end
 
   def handle_event("edit", %{"id" => id}, socket) do
@@ -182,7 +202,7 @@ defmodule ArgusWeb.MobileLive.Todos do
   end
 
   def handle_event("cancel", _params, socket) do
-    {:noreply, IndexHelpers.close_modal(socket)}
+    {:noreply, socket |> IndexHelpers.close_modal() |> leave_new_todo_route()}
   end
 
   def handle_event("validate", params, socket) do
@@ -190,7 +210,10 @@ defmodule ArgusWeb.MobileLive.Todos do
   end
 
   def handle_event("save", params, socket) do
-    IndexHelpers.handle_save(socket, params) |> IndexHelpers.handle_result()
+    case IndexHelpers.handle_save(socket, params) do
+      {:ok, socket} -> {:noreply, leave_new_todo_route(socket)}
+      result -> IndexHelpers.handle_result(result)
+    end
   end
 
   def handle_event("toggle_complete", params, socket) do
@@ -224,4 +247,12 @@ defmodule ArgusWeb.MobileLive.Todos do
 
   defp activity_subject(%{todo: %{title: title}}) when is_binary(title), do: " \"#{title}\""
   defp activity_subject(_), do: ""
+
+  defp leave_new_todo_route(socket) do
+    if socket.assigns.live_action == :new do
+      push_patch(socket, to: ~p"/m/#{socket.assigns.current_scope.entity.slug}/todos")
+    else
+      socket
+    end
+  end
 end

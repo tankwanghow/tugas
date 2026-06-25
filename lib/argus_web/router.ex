@@ -71,6 +71,7 @@ defmodule ArgusWeb.Router do
       live "/m/:entity_slug/obligations/:id", MobileLive.ObligationShow, :show
       live "/m/:entity_slug/obligation-types", MobileLive.ObligationTypes, :index
       live "/m/:entity_slug/todos", MobileLive.Todos, :index
+      live "/m/:entity_slug/todos/new", MobileLive.Todos, :new
       live "/m/:entity_slug/invite-session/:role", MobileLive.InviteSession, :show
     end
 

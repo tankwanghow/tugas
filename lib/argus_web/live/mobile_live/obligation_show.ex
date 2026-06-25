@@ -21,7 +21,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.mobile_app flash={@flash} current_scope={@current_scope} active={:obligations}>
+    <Layouts.mobile_app flash={@flash} current_scope={@current_scope} active={:duties}>
       <div
         id="mobile-obligation-show"
         class="px-2 py-2"

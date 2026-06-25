@@ -81,7 +81,10 @@ defmodule ArgusWeb.TodoLiveTest do
     {:ok, view, html} = live(conn, ~p"/m/#{scope.entity.slug}/todos")
 
     assert html =~ "Todos"
+    assert has_element?(view, "#m-new-todo-nav-link")
     assert has_element?(view, "#m-todos-nav-link")
+    assert has_element?(view, "#m-new-duties-nav-link")
+    assert has_element?(view, "#m-duties-nav-link")
     assert has_element?(view, "#m-new-todo-btn")
     assert has_element?(view, "#m-todos-empty")
     refute has_element?(view, "#m-more-todos-link")
@@ -98,19 +101,29 @@ defmodule ArgusWeb.TodoLiveTest do
     assert html =~ "Todo not found"
   end
 
-  test "mobile member creates a todo", %{conn: conn} do
+  test "mobile new todo nav opens create modal", %{conn: conn} do
+    scope = entity_scope_fixture()
+    conn = mobile_conn(conn, scope.user)
+
+    {:ok, view, _html} = live(conn, ~p"/m/#{scope.entity.slug}/todos/new")
+
+    assert has_element?(view, "#m-todo-modal")
+    assert has_element?(view, "#m-new-todo-nav-link.text-primary")
+  end
+
+  test "mobile member creates a todo via new route", %{conn: conn} do
     admin = entity_scope_fixture()
     scope = member_scope_on_entity(admin.entity)
     conn = mobile_conn(conn, scope.user)
 
-    {:ok, view, _html} = live(conn, ~p"/m/#{scope.entity.slug}/todos")
-
-    view |> element("#m-new-todo-btn") |> render_click()
+    {:ok, view, _html} = live(conn, ~p"/m/#{scope.entity.slug}/todos/new")
 
     view
     |> form("#m-todo-form", %{"todo" => %{"title" => "Mobile quick task"}})
     |> render_submit()
 
+    assert_patch(view, ~p"/m/#{scope.entity.slug}/todos")
     assert has_element?(view, "#m-todos-list", "Mobile quick task")
+    refute has_element?(view, "#m-todo-modal")
   end
 end

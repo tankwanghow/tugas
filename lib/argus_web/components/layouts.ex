@@ -366,41 +366,21 @@ defmodule ArgusWeb.Layouts do
   attr :current_scope, :map, required: true
 
   defp mobile_bottom_nav(assigns) do
-    assigns =
-      assign(
-        assigns,
-        :can_create,
-        Argus.Authorization.can?(assigns.current_scope, :create_obligation)
-      )
-
     ~H"""
     <nav class="fixed bottom-0 inset-x-0 z-30 bg-base-100 border-t border-base-300 pb-[env(safe-area-inset-bottom)]">
-      <ul class={["grid", if(@can_create, do: "grid-cols-4", else: "grid-cols-3")]}>
-        <li :if={@can_create}>
+      <ul class="grid grid-cols-5">
+        <li>
           <.link
-            id="m-new-obligation-btn"
-            navigate={~p"/m/#{@current_scope.entity.slug}/obligations/new"}
+            id="m-new-todo-nav-link"
+            navigate={~p"/m/#{@current_scope.entity.slug}/todos/new"}
             class={[
               "flex flex-col items-center gap-1 py-3 active:bg-base-200",
-              @active == :new && "text-primary",
-              @active != :new && "text-base-content/60"
+              @active == :new_todo && "text-primary",
+              @active != :new_todo && "text-base-content/60"
             ]}
           >
             <.icon name="hero-plus-circle" class="size-6" />
-            <span class="text-[11px]">New Duty</span>
-          </.link>
-        </li>
-        <li>
-          <.link
-            navigate={~p"/m/#{@current_scope.entity.slug}"}
-            class={[
-              "flex flex-col items-center gap-1 py-3 active:bg-base-200",
-              @active == :home && "text-primary",
-              @active != :home && "text-base-content/60"
-            ]}
-          >
-            <.icon name="hero-home" class="size-6" />
-            <span class="text-[11px]">Dashboard</span>
+            <span class="text-[10px] leading-tight text-center">New Todo</span>
           </.link>
         </li>
         <li>
@@ -414,7 +394,35 @@ defmodule ArgusWeb.Layouts do
             ]}
           >
             <.icon name="hero-clipboard-document-check" class="size-6" />
-            <span class="text-[11px]">Todos</span>
+            <span class="text-[10px] leading-tight text-center">Todos</span>
+          </.link>
+        </li>
+        <li>
+          <.link
+            id="m-new-duties-nav-link"
+            navigate={~p"/m/#{@current_scope.entity.slug}/obligations/new"}
+            class={[
+              "flex flex-col items-center gap-1 py-3 active:bg-base-200",
+              @active == :new_duty && "text-primary",
+              @active != :new_duty && "text-base-content/60"
+            ]}
+          >
+            <.icon name="hero-plus-circle" class="size-6" />
+            <span class="text-[10px] leading-tight text-center">New Duties</span>
+          </.link>
+        </li>
+        <li>
+          <.link
+            id="m-duties-nav-link"
+            navigate={~p"/m/#{@current_scope.entity.slug}"}
+            class={[
+              "flex flex-col items-center gap-1 py-3 active:bg-base-200",
+              @active == :duties && "text-primary",
+              @active != :duties && "text-base-content/60"
+            ]}
+          >
+            <.icon name="hero-home" class="size-6" />
+            <span class="text-[10px] leading-tight text-center">Duties</span>
           </.link>
         </li>
         <li>
@@ -428,7 +436,7 @@ defmodule ArgusWeb.Layouts do
             ]}
           >
             <.icon name="hero-bars-3" class="size-6" />
-            <span class="text-[11px]">More</span>
+            <span class="text-[10px] leading-tight text-center">More</span>
           </button>
         </li>
       </ul>

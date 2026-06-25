@@ -11,7 +11,7 @@ defmodule ArgusWeb.MobileLive.ObligationForm do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.mobile_app flash={@flash} current_scope={@current_scope} active={:new}>
+    <Layouts.mobile_app flash={@flash} current_scope={@current_scope} active={:new_duty}>
       <div id="m-obligation-form" class="p-4">
         <h1 class="text-lg font-semibold">New duty</h1>
 

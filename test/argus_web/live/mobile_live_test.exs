@@ -517,7 +517,7 @@ defmodule ArgusWeb.MobileLiveTest do
 
     assert has_element?(
              view,
-             "#m-new-obligation-btn[href='/m/#{manager.entity.slug}/obligations/new']"
+             "#m-new-duties-nav-link[href='/m/#{manager.entity.slug}/obligations/new']"
            )
   end
 

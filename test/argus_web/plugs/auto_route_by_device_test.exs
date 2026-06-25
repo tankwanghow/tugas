@@ -16,6 +16,7 @@ defmodule ArgusWeb.Plugs.AutoRouteByDeviceTest do
       assert "/obligations/new" in tails
       assert "/obligation-types" in tails
       assert "/todos" in tails
+      assert "/todos/new" in tails
       refute "/members" in tails
     end
   end
