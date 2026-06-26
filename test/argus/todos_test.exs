@@ -174,6 +174,89 @@ defmodule Argus.TodosTest do
     end
   end
 
+  describe "list_entity_audit_logs/2 filtering" do
+    test "filters by action" do
+      scope = entity_scope_fixture()
+      {:ok, a} = Todos.create_todo(scope, %{title: "Alpha"})
+      {:ok, _b} = Todos.create_todo(scope, %{title: "Beta"})
+      {:ok, _completed} = Todos.toggle_complete(scope, a)
+
+      assert {:ok, logs} = Todos.list_entity_audit_logs(scope, action: "completed")
+      assert Enum.all?(logs, &(&1.action == "completed"))
+      assert length(logs) == 1
+    end
+
+    test "search matches todo title (ILIKE)" do
+      scope = entity_scope_fixture()
+      {:ok, _a} = Todos.create_todo(scope, %{title: "Refill printer"})
+      {:ok, _b} = Todos.create_todo(scope, %{title: "Order coffee"})
+
+      assert {:ok, logs} = Todos.list_entity_audit_logs(scope, search: "printer")
+      assert length(logs) == 1
+      assert hd(logs).todo.title == "Refill printer"
+    end
+
+    test "search matches actor email/username (ILIKE)" do
+      scope = entity_scope_fixture()
+      other = member_scope_on_entity(scope.entity)
+      {:ok, _mine} = Todos.create_todo(scope, %{title: "Mine"})
+      {:ok, _theirs} = Todos.create_todo(other, %{title: "Theirs"})
+
+      assert {:ok, logs} = Todos.list_entity_audit_logs(scope, search: other.user.email)
+      assert logs != []
+      assert Enum.all?(logs, &(&1.user_id == other.user.id))
+    end
+
+    test "action and search combine" do
+      scope = entity_scope_fixture()
+      {:ok, a} = Todos.create_todo(scope, %{title: "Unique-needle"})
+      {:ok, b} = Todos.create_todo(scope, %{title: "Other"})
+      {:ok, _} = Todos.toggle_complete(scope, a)
+      {:ok, _} = Todos.toggle_complete(scope, b)
+
+      assert {:ok, logs} =
+               Todos.list_entity_audit_logs(scope, action: "completed", search: "needle")
+
+      assert length(logs) == 1
+      assert hd(logs).action == "completed"
+      assert hd(logs).todo.title == "Unique-needle"
+    end
+  end
+
+  describe "list_entity_audit_logs_page/2" do
+    test "keyset-paginates newest-first and stops at the end" do
+      scope = entity_scope_fixture()
+      for i <- 1..7, do: {:ok, _} = Todos.create_todo(scope, %{title: "T#{i}"})
+
+      assert {:ok, %{rows: page1, cursor: cursor, end?: false}} =
+               Todos.list_entity_audit_logs_page(scope, limit: 5)
+
+      assert length(page1) == 5
+      assert cursor
+
+      assert {:ok, %{rows: page2, cursor: nil, end?: true}} =
+               Todos.list_entity_audit_logs_page(scope, limit: 5, cursor: cursor)
+
+      assert length(page2) == 2
+
+      ids = Enum.map(page1 ++ page2, & &1.id)
+      assert ids == Enum.uniq(ids)
+    end
+
+    test "applies action/search filters across pages" do
+      scope = entity_scope_fixture()
+      {:ok, a} = Todos.create_todo(scope, %{title: "Needle"})
+      {:ok, _b} = Todos.create_todo(scope, %{title: "Hay"})
+      {:ok, _} = Todos.toggle_complete(scope, a)
+
+      assert {:ok, %{rows: rows, end?: true}} =
+               Todos.list_entity_audit_logs_page(scope, action: "completed")
+
+      assert Enum.all?(rows, &(&1.action == "completed"))
+      assert length(rows) == 1
+    end
+  end
+
   describe "cancel_todo/3" do
     test "cancels todo after 48 hours with required note" do
       scope = entity_scope_fixture()

@@ -4,29 +4,26 @@ defmodule ArgusWeb.TodoLive.IndexHelpers do
   use ArgusWeb, :verified_routes
 
   import Phoenix.Component, only: [assign: 2, assign: 3, to_form: 2]
-  import Phoenix.LiveView, only: [put_flash: 3, push_navigate: 2, stream: 4, stream_insert: 4]
+
+  import Phoenix.LiveView,
+    only: [
+      connected?: 1,
+      put_flash: 3,
+      push_event: 3,
+      push_navigate: 2,
+      stream: 4,
+      stream_insert: 4
+    ]
 
   alias Argus.Authorization
   alias Argus.Todos
   alias Argus.Todos.Todo
 
-  @statuses ~w(open completed escalated canceled all)a
+  # The index shows a single unified list (every lifecycle) ordered open → completed →
+  # escalated → canceled, then newest-first. There is no status filter.
+  @list_status :all
 
-  def statuses, do: Enum.map(@statuses, &{Atom.to_string(&1), status_label(&1)})
-
-  def parse_status(status), do: Todos.parse_status(status)
-
-  def status_label(:open), do: "Open"
-  def status_label(:completed), do: "Completed"
-  def status_label(:escalated), do: "Escalated"
-  def status_label(:canceled), do: "Canceled"
-  def status_label(:all), do: "All"
-
-  def empty_message(:open), do: "No open todos. Add one or try another filter."
-  def empty_message(:completed), do: "No completed todos yet."
-  def empty_message(:escalated), do: "No escalated todos yet."
-  def empty_message(:canceled), do: "No canceled todos yet."
-  def empty_message(:all), do: "No todos yet. Add one to get started."
+  def empty_message, do: "No todos yet. Add one to get started."
 
   def row_muted?(%Todo{} = todo) do
     Todo.display_status(todo) != :open
@@ -47,21 +44,66 @@ defmodule ArgusWeb.TodoLive.IndexHelpers do
     case Map.get(row_effects || %{}, todo_id) do
       :created -> "todo-row--created"
       :updated -> "todo-row--updated"
+      :completed -> "todo-row--completed"
       :deleted -> "todo-row--deleted"
       _ -> nil
     end
   end
 
-  def mount_assigns(socket) do
+  @doc """
+  Mount assigns. `params` carries the optional `?highlight=<todo_id>` (set when arriving
+  from the team log): `highlight_id` is assigned **before** `load_first_page` so the matching
+  first-page row bakes the `todo-row-highlight` class at stream time (server-side, like the
+  `todo-row--*` effects — no dependence on JS). A target beyond the loaded cursor is then
+  fetched and inserted at the top. A deleted/unknown id is ignored.
+  """
+  def mount_assigns(socket, params \\ %{}) do
     socket
     |> assign(:todo_form, nil)
     |> assign(:editing, nil)
     |> assign(:canceling_todo, nil)
     |> assign(:cancel_form, nil)
-    |> assign(:expanded_audit_id, nil)
-    |> assign(:status, :open)
+    |> assign(:highlight_id, normalize_highlight(params))
     |> assign(:row_effects, %{})
     |> load_first_page()
+    |> insert_offpage_highlight()
+    |> push_highlight_scroll()
+  end
+
+  # After the connected render the client patches the DOM and mounts hooks, *then* dispatches
+  # pushed events — so this beats LiveView's own scroll-to-top on navigation and the row is
+  # laid out by the time we scroll. Only pushed when the row is actually present.
+  defp push_highlight_scroll(%{assigns: %{highlight_id: nil}} = socket), do: socket
+
+  defp push_highlight_scroll(%{assigns: %{highlight_id: id, loaded_ids: loaded}} = socket) do
+    if connected?(socket) and MapSet.member?(loaded, id) do
+      push_event(socket, "highlight_todo", %{id: id})
+    else
+      socket
+    end
+  end
+
+  defp normalize_highlight(%{"highlight" => id}) when is_binary(id) and id != "", do: id
+  defp normalize_highlight(_), do: nil
+
+  defp insert_offpage_highlight(%{assigns: %{highlight_id: nil}} = socket), do: socket
+
+  defp insert_offpage_highlight(%{assigns: %{highlight_id: id, loaded_ids: loaded}} = socket) do
+    if MapSet.member?(loaded, id) do
+      socket
+    else
+      case Todos.get_listed_todo(socket.assigns.current_scope, id) do
+        {:ok, todo} ->
+          socket
+          |> stream_insert(:todos, todo, dom_id: &todo_dom_id(socket, &1), at: 0)
+          |> assign(:empty?, false)
+          |> assign(:loaded_ids, MapSet.put(loaded, id))
+          |> assign(:audit_by_id, Map.merge(socket.assigns.audit_by_id, audit_for_todos([todo])))
+
+        _ ->
+          socket
+      end
+    end
   end
 
   def todo_dom_id(socket, %Todo{id: id}) do
@@ -74,13 +116,18 @@ defmodule ArgusWeb.TodoLive.IndexHelpers do
 
   def load_first_page(socket) do
     scope = socket.assigns.current_scope
-    status = socket.assigns[:status] || :open
 
-    case Todos.list_todos_page(scope, status: status) do
+    case Todos.list_todos_page(scope, status: @list_status) do
       :not_authorise ->
         socket
         |> stream(:todos, [], reset: true)
-        |> assign(cursor: nil, end?: true, empty?: true, audit_by_id: %{})
+        |> assign(
+          cursor: nil,
+          end?: true,
+          empty?: true,
+          audit_by_id: %{},
+          loaded_ids: MapSet.new()
+        )
 
       {:ok, %{rows: todos, cursor: cursor, end?: end?}} ->
         socket
@@ -89,17 +136,17 @@ defmodule ArgusWeb.TodoLive.IndexHelpers do
           cursor: cursor,
           end?: end?,
           empty?: todos == [],
-          audit_by_id: audit_for_todos(todos)
+          audit_by_id: audit_for_todos(todos),
+          loaded_ids: MapSet.new(todos, & &1.id)
         )
     end
   end
 
   def load_more(socket) do
     scope = socket.assigns.current_scope
-    status = socket.assigns[:status] || :open
     cursor = socket.assigns[:cursor]
 
-    case Todos.list_todos_page(scope, status: status, cursor: cursor) do
+    case Todos.list_todos_page(scope, status: @list_status, cursor: cursor) do
       :not_authorise ->
         socket
 
@@ -109,7 +156,8 @@ defmodule ArgusWeb.TodoLive.IndexHelpers do
         |> assign(
           cursor: new_cursor,
           end?: end?,
-          audit_by_id: Map.merge(socket.assigns.audit_by_id, audit_for_todos(todos))
+          audit_by_id: Map.merge(socket.assigns.audit_by_id, audit_for_todos(todos)),
+          loaded_ids: MapSet.union(socket.assigns.loaded_ids, MapSet.new(todos, & &1.id))
         )
     end
   end
@@ -252,8 +300,8 @@ defmodule ArgusWeb.TodoLive.IndexHelpers do
     case Todos.get_todo(scope, id) do
       {:ok, todo} ->
         case Todos.toggle_complete(scope, todo) do
-          {:ok, _todo} ->
-            {:ok, load_first_page(socket)}
+          {:ok, updated} ->
+            {:ok, apply_toggle_effect(socket, scope, updated)}
 
           :not_authorise ->
             {:not_authorise, socket |> put_flash(:error, "Not authorized.")}
@@ -386,10 +434,6 @@ defmodule ArgusWeb.TodoLive.IndexHelpers do
     end
   end
 
-  def handle_set_status(socket, %{"status" => status}) do
-    {:ok, assign(socket, :status, parse_status(status)) |> load_first_page()}
-  end
-
   def handle_load_more(socket) do
     if socket.assigns[:end?] do
       {:ok, socket}
@@ -411,16 +455,20 @@ defmodule ArgusWeb.TodoLive.IndexHelpers do
     {:noreply, socket}
   end
 
-  defp apply_save_effect(socket, scope, %Todo{} = todo, effect) do
-    status = socket.assigns[:status] || :open
+  # The unified list always shows the row; completing flashes the satisfying check
+  # animation and leaves the (now muted) row in place, reopening flashes :updated.
+  defp apply_toggle_effect(socket, scope, %Todo{} = todo) do
+    effect = if Todo.completed?(todo), do: :completed, else: :updated
 
-    if todo_visible_in_status?(todo, status) do
-      socket
-      |> put_row_effect(todo.id, effect)
-      |> insert_todo_row(scope, todo, effect)
-    else
-      socket
-    end
+    socket
+    |> put_row_effect(todo.id, effect)
+    |> insert_todo_row(scope, todo, effect)
+  end
+
+  defp apply_save_effect(socket, scope, %Todo{} = todo, effect) do
+    socket
+    |> put_row_effect(todo.id, effect)
+    |> insert_todo_row(scope, todo, effect)
   end
 
   defp insert_todo_row(socket, scope, %Todo{} = todo, :created) do
@@ -450,16 +498,6 @@ defmodule ArgusWeb.TodoLive.IndexHelpers do
       Map.put(socket.assigns.audit_by_id, todo.id, Todos.list_audit_logs(todo))
     )
   end
-
-  defp todo_visible_in_status?(%Todo{} = todo, :open),
-    do: Todo.open?(todo) and not Todo.completed?(todo)
-
-  defp todo_visible_in_status?(%Todo{} = todo, :completed),
-    do: Todo.completed?(todo) and not Todo.escalated?(todo) and not Todo.canceled?(todo)
-
-  defp todo_visible_in_status?(%Todo{} = todo, :escalated), do: Todo.escalated?(todo)
-  defp todo_visible_in_status?(%Todo{} = todo, :canceled), do: Todo.canceled?(todo)
-  defp todo_visible_in_status?(%Todo{}, :all), do: true
 
   defp put_row_effect(socket, todo_id, effect) do
     assign(socket, :row_effects, Map.put(socket.assigns.row_effects || %{}, todo_id, effect))

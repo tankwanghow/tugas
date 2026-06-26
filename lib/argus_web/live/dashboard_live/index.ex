@@ -126,8 +126,8 @@ defmodule ArgusWeb.DashboardLive.Index do
         )
       ]}
     >
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-        <span class="font-medium">{@row.obligation.title}</span>
+      <div class="flex justify-between items-center gap-x-2 gap-y-0.5">
+        <div class="font-medium">{@row.obligation.title}</div>
         <.cycle_badge
           cycle_status={@row.cycle_status}
           tier={@row.tier}

@@ -21,7 +21,7 @@ defmodule ArgusWeb.TodoBadge do
     <span
       :if={@status != :open}
       id={"todo-badge-#{@todo.id}"}
-      class={["badge badge-xs", badge_class(@status)]}
+      class={["badge", badge_class(@status)]}
       data-todo-status={@status}
     >
       {@label}

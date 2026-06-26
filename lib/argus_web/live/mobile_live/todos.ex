@@ -2,7 +2,7 @@ defmodule ArgusWeb.MobileLive.Todos do
   use ArgusWeb, :live_view
 
   alias ArgusWeb.ModalEscape
-  alias ArgusWeb.TodoLive.{ActivityFormat, IndexHelpers}
+  alias ArgusWeb.TodoLive.IndexHelpers
   alias Argus.Todos.Todo
 
   @impl true
@@ -13,27 +13,15 @@ defmodule ArgusWeb.MobileLive.Todos do
       current_scope={@current_scope}
       active={if(@live_action == :new, do: :new_todo, else: :todos)}
     >
-      <div id="m-todos-page" class="p-4">
+      <div id="m-todos-page" class="p-4" phx-hook="TodoHighlight" data-highlight-id={@highlight_id}>
         <div class="flex items-center justify-between gap-2 mb-3">
           <div class="font-semibold text-xl">
             Todos - <span class="text-base-content/50">{@current_scope.entity.slug}</span>
           </div>
-
-          <form id="m-todo-status-filter" phx-change="set_status">
-            <select id="m-todo-status-select" name="status" class="select select-sm w-auto">
-              <option
-                :for={{value, label} <- IndexHelpers.statuses()}
-                value={value}
-                selected={@status == IndexHelpers.parse_status(value)}
-              >
-                {label}
-              </option>
-            </select>
-          </form>
         </div>
         <ul
           id="m-todos-list"
-          class="divide-y divide-base-300 rounded-box border border-base-300"
+          class="divide-base-400"
           phx-update="stream"
           phx-viewport-bottom={!@end? && "load_more"}
         >
@@ -43,9 +31,11 @@ defmodule ArgusWeb.MobileLive.Todos do
             phx-hook="TodoRowEffect"
             data-todo-id={todo.id}
             data-effect={IndexHelpers.row_effect_name(@row_effects, todo.id)}
+            data-menu-id={"m-todo-actions-#{todo.id}"}
             class={[
-              "p-2 border-l-4 border-transparent",
+              "px-2 py-4 border-1 select-none mb-2 rounded-xl shadow",
               IndexHelpers.row_muted?(todo) && "opacity-60",
+              @highlight_id == todo.id && "todo-row-highlight",
               IndexHelpers.row_effect_class(@row_effects, todo.id)
             ]}
           >
@@ -54,16 +44,16 @@ defmodule ArgusWeb.MobileLive.Todos do
                 :if={Todo.active?(todo)}
                 id={"m-todo-complete-#{todo.id}"}
                 type="checkbox"
-                class="checkbox checkbox-sm mt-1"
+                class="checkbox checkbox-lg mt-0.5"
                 checked={Todo.completed?(todo)}
                 phx-click="toggle_complete"
                 phx-value-id={todo.id}
               />
-              <div :if={not Todo.active?(todo)} class="w-4 shrink-0" aria-hidden="true" />
+              <div :if={not Todo.active?(todo)} class="w-6 shrink-0" aria-hidden="true" />
               <div class="flex-1 min-w-0 space-y-1">
-                <div class="flex flex-wrap items-center">
+                <div class="flex flex-wrap items-center gap-2">
                   <div class={[
-                    "font-medium",
+                    "font-medium text-lg",
                     IndexHelpers.title_strike?(todo) && "line-through text-base-content/60"
                   ]}>
                     {todo.title}
@@ -81,17 +71,12 @@ defmodule ArgusWeb.MobileLive.Todos do
                   View duty
                 </.link>
               </div>
-              <.todo_actions_menu todo={todo} current_scope={@current_scope} mobile?={true} />
             </div>
-            <.audit_trail
-              todo={todo}
-              logs={Map.get(@audit_by_id, todo.id, [])}
-              expanded?={@expanded_audit_id == todo.id}
-            />
+            <.todo_actions_menu todo={todo} current_scope={@current_scope} mobile?={true} />
           </li>
         </ul>
         <p :if={@empty?} id="m-todos-empty" class="text-sm text-base-content/60">
-          {IndexHelpers.empty_message(@status)}
+          {IndexHelpers.empty_message()}
         </p>
       </div>
 
@@ -105,7 +90,13 @@ defmodule ArgusWeb.MobileLive.Todos do
             phx-submit="save"
             class="mt-4 space-y-3"
           >
-            <.input field={@todo_form[:title]} type="text" label="Title" required />
+            <.input
+              field={@todo_form[:title]}
+              type="text"
+              label="Title"
+              required
+              phx-mounted={JS.focus()}
+            />
             <div class="flex gap-2 pt-2">
               <button type="button" class="btn flex-1" phx-click="dismiss_form">Cancel</button>
               <.button class="btn btn-primary flex-1" phx-disable-with="Saving…">
@@ -148,37 +139,9 @@ defmodule ArgusWeb.MobileLive.Todos do
     """
   end
 
-  attr :todo, Todo, required: true
-  attr :logs, :list, required: true
-  attr :expanded?, :boolean, required: true
-
-  defp audit_trail(assigns) do
-    ~H"""
-    <div :if={@logs != []} class="pl-8">
-      <button
-        type="button"
-        phx-click="toggle_audit"
-        phx-value-id={@todo.id}
-        class="text-xs text-base-content/50"
-      >
-        {if @expanded?, do: "Hide history", else: "History (#{length(@logs)})"}
-      </button>
-      <ul
-        :if={@expanded?}
-        id={"m-todo-audit-#{@todo.id}"}
-        class="mt-1 space-y-1 text-xs text-base-content/60"
-      >
-        <li :for={log <- @logs}>
-          {ActivityFormat.audit_action_label(log.action)} · {ActivityFormat.display_name(log.user)}
-        </li>
-      </ul>
-    </div>
-    """
-  end
-
   @impl true
-  def mount(_params, _session, socket) do
-    {:ok, IndexHelpers.mount_assigns(socket)}
+  def mount(params, _session, socket) do
+    {:ok, IndexHelpers.mount_assigns(socket, params)}
   end
 
   @impl true
@@ -245,23 +208,12 @@ defmodule ArgusWeb.MobileLive.Todos do
     {:noreply, IndexHelpers.close_cancel_modal(socket)}
   end
 
-  def handle_event("set_status", params, socket) do
-    IndexHelpers.handle_set_status(socket, params) |> IndexHelpers.handle_result()
-  end
-
   def handle_event("todo_action", params, socket) do
     IndexHelpers.handle_todo_action(socket, params) |> IndexHelpers.handle_result()
   end
 
   def handle_event("finish_row_effect", params, socket) do
     IndexHelpers.handle_finish_row_effect(socket, params) |> IndexHelpers.handle_result()
-  end
-
-  def handle_event("toggle_audit", %{"id" => id}, socket) do
-    expanded =
-      if socket.assigns.expanded_audit_id == id, do: nil, else: id
-
-    {:noreply, assign(socket, :expanded_audit_id, expanded)}
   end
 
   def handle_event("load_more", _params, socket) do

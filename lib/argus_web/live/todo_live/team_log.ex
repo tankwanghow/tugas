@@ -1,7 +1,7 @@
 defmodule ArgusWeb.TodoLive.TeamLog do
   use ArgusWeb, :live_view
 
-  alias Argus.Todos
+  alias ArgusWeb.TodoLive.TeamLogHelpers
 
   @impl true
   def render(assigns) do
@@ -21,7 +21,39 @@ defmodule ArgusWeb.TodoLive.TeamLog do
           </:actions>
         </.header>
 
-        <.todo_team_activity logs={@activity} id="todo-team-log" variant={:desktop} />
+        <form
+          id="todo-team-log-filter"
+          phx-change="filter"
+          phx-submit="filter"
+          class="mt-2 flex flex-wrap items-center gap-2"
+        >
+          <input
+            type="text"
+            name="search"
+            value={@filter_search}
+            placeholder="Search by todo or person…"
+            phx-debounce="300"
+            class="input input-bordered w-full sm:w-72"
+          />
+          <select name="action" class="select select-bordered">
+            <option
+              :for={{label, value} <- TeamLogHelpers.action_options()}
+              value={value}
+              selected={value == @filter_action}
+            >
+              {label}
+            </option>
+          </select>
+        </form>
+
+        <.todo_team_activity
+          id="todo-team-log"
+          rows={@streams.activity}
+          empty?={@empty?}
+          end?={@end?}
+          entity_slug={@current_scope.entity.slug}
+          variant={:desktop}
+        />
       </div>
     </Layouts.app>
     """
@@ -29,23 +61,23 @@ defmodule ArgusWeb.TodoLive.TeamLog do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok, load_activity(socket)}
+    {:ok, TeamLogHelpers.mount_assigns(socket)}
   end
 
   @impl true
-  def handle_event("close_modal_on_escape", _params, socket) do
-    {:noreply, socket}
+  def handle_event("filter", params, socket) do
+    {:noreply, TeamLogHelpers.handle_filter(socket, params)}
   end
 
-  defp load_activity(socket) do
-    scope = socket.assigns.current_scope
+  def handle_event("load_more", _params, socket) do
+    {:noreply, TeamLogHelpers.handle_load_more(socket)}
+  end
 
-    case Todos.list_entity_audit_logs(scope) do
-      {:ok, activity} ->
-        assign(socket, :activity, activity)
+  def handle_event("deleted_todo_notice", _params, socket) do
+    {:noreply, put_flash(socket, :info, TeamLogHelpers.deleted_notice())}
+  end
 
-      :not_authorise ->
-        assign(socket, :activity, [])
-    end
+  def handle_event("close_modal_on_escape", _params, socket) do
+    {:noreply, socket}
   end
 end

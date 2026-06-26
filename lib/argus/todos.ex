@@ -13,7 +13,8 @@ defmodule Argus.Todos do
   alias Argus.Todos.{AuditLog, Pagination, Todo}
 
   @statuses ~w(open completed escalated canceled all)a
-  @page_size 25
+  @page_size 50
+  @audit_page_size 25
 
   def statuses, do: @statuses
 
@@ -94,6 +95,27 @@ defmodule Argus.Todos do
   end
 
   def get_todo(_, _), do: :not_authorise
+
+  @doc """
+  Fetches a single todo as it appears in the index list (any non-deleted lifecycle —
+  open/completed/canceled/escalated), with the same preloads as `list_todos_page/2`.
+
+  Used to surface a todo arrived-at from the team log even when it sits beyond the loaded
+  pagination cursor. Returns `:not_found` for a deleted/unknown id.
+  """
+  def get_listed_todo(%Scope{} = scope, id) do
+    with {:ok, entity} <- require_entity(scope),
+         true <- Authorization.can?(scope, :view_todos),
+         %Todo{} = todo <- fetch_listed_todo(entity.id, id) do
+      {:ok, todo}
+    else
+      :no_entity -> :not_authorise
+      false -> :not_authorise
+      nil -> :not_found
+    end
+  end
+
+  def get_listed_todo(_, _), do: :not_authorise
 
   def get_todo_for_escalation(%Scope{} = scope, id) do
     with {:ok, entity} <- require_entity(scope),
@@ -322,18 +344,15 @@ defmodule Argus.Todos do
     |> Enum.group_by(& &1.todo_id)
   end
 
-  def list_entity_audit_logs(scope, limit \\ 50)
+  def list_entity_audit_logs(scope, opts \\ [])
 
-  def list_entity_audit_logs(%Scope{} = scope, limit) do
+  def list_entity_audit_logs(%Scope{} = scope, opts) do
     with {:ok, entity} <- require_entity(scope),
          true <- Authorization.can?(scope, :view_todos) do
       logs =
-        AuditLog
-        |> join(:inner, [a], t in Todo, on: a.todo_id == t.id)
-        |> where([a, t], t.entity_id == ^entity.id)
-        |> order_by([a], desc: a.inserted_at)
-        |> limit(^limit)
-        |> preload([:user, todo: []])
+        entity
+        |> entity_audit_query(opts)
+        |> limit(^Keyword.get(opts, :limit, 50))
         |> Repo.all()
 
       {:ok, logs}
@@ -344,6 +363,112 @@ defmodule Argus.Todos do
   end
 
   def list_entity_audit_logs(_, _), do: :not_authorise
+
+  @doc """
+  Keyset-paginated entity audit feed for the team-log infinite scroll.
+
+  Same action/search filters as `list_entity_audit_logs/2`, ordered newest-first by
+  `(inserted_at, id)`. Returns `%{rows, cursor, end?}`; pass `cursor:` to fetch the next
+  page (opaque `Todos.Pagination` codec).
+  """
+  def list_entity_audit_logs_page(scope, opts \\ [])
+
+  def list_entity_audit_logs_page(%Scope{} = scope, opts) do
+    limit = Keyword.get(opts, :limit, @audit_page_size)
+    cursor = Pagination.decode(Keyword.get(opts, :cursor))
+
+    with {:ok, entity} <- require_entity(scope),
+         true <- Authorization.can?(scope, :view_todos) do
+      rows =
+        entity
+        |> entity_audit_query(opts)
+        |> apply_audit_cursor(cursor)
+        |> limit(^(limit + 1))
+        |> Repo.all()
+
+      {page, end?} = audit_slice(rows, limit)
+      {:ok, %{rows: page, cursor: audit_cursor(page, end?), end?: end?}}
+    else
+      :no_entity -> :not_authorise
+      false -> :not_authorise
+    end
+  end
+
+  def list_entity_audit_logs_page(_, _), do: :not_authorise
+
+  @doc "Action values selectable in the team-log filter dropdown."
+  def audit_actions, do: AuditLog.actions()
+
+  defp entity_audit_query(entity, opts) do
+    action = parse_audit_action(Keyword.get(opts, :action))
+    search = normalize_search(Keyword.get(opts, :search))
+
+    AuditLog
+    |> join(:inner, [a], t in Todo, on: a.todo_id == t.id)
+    |> join(:left, [a], u in assoc(a, :user))
+    |> where([a, t], t.entity_id == ^entity.id)
+    |> filter_audit_action(action)
+    |> filter_audit_search(search)
+    |> order_by([a], desc: a.inserted_at, desc: a.id)
+    |> preload([:user, todo: []])
+  end
+
+  defp apply_audit_cursor(query, nil), do: query
+
+  defp apply_audit_cursor(query, %{key: key, id: id}) do
+    case DateTime.from_iso8601(key) do
+      {:ok, dt, _} ->
+        where(query, [a], a.inserted_at < ^dt or (a.inserted_at == ^dt and a.id < ^id))
+
+      _ ->
+        query
+    end
+  end
+
+  defp audit_slice(rows, limit) do
+    if length(rows) > limit, do: {Enum.take(rows, limit), false}, else: {rows, true}
+  end
+
+  defp audit_cursor(_page, true), do: nil
+  defp audit_cursor([], _end?), do: nil
+
+  defp audit_cursor(page, false) do
+    last = List.last(page)
+    Pagination.encode(%{key: DateTime.to_iso8601(last.inserted_at), id: last.id})
+  end
+
+  defp parse_audit_action(action) when is_atom(action) and not is_nil(action),
+    do: parse_audit_action(Atom.to_string(action))
+
+  defp parse_audit_action(action) when is_binary(action) do
+    if action in AuditLog.actions(), do: action, else: nil
+  end
+
+  defp parse_audit_action(_), do: nil
+
+  defp normalize_search(search) when is_binary(search) do
+    case String.trim(search) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp normalize_search(_), do: nil
+
+  defp filter_audit_action(query, nil), do: query
+  defp filter_audit_action(query, action), do: where(query, [a], a.action == ^action)
+
+  defp filter_audit_search(query, nil), do: query
+
+  defp filter_audit_search(query, search) do
+    pattern = "%#{search}%"
+
+    where(
+      query,
+      [a, t, u],
+      ilike(t.title, ^pattern) or ilike(u.email, ^pattern) or ilike(u.username, ^pattern)
+    )
+  end
 
   defp complete_todo(scope, todo, user_id) do
     Multi.new()
@@ -575,6 +700,14 @@ defmodule Argus.Todos do
     |> workable_todos(entity_id)
     |> where([t], t.id == ^id)
     |> preload([:created_by, :completed_by])
+    |> Repo.one()
+  end
+
+  defp fetch_listed_todo(entity_id, id) do
+    Todo
+    |> entity_todos(entity_id)
+    |> where([t], t.id == ^id)
+    |> preload([:created_by, :completed_by, :escalated_obligation])
     |> Repo.one()
   end
 end

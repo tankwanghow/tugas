@@ -7,6 +7,8 @@ defmodule Argus.Todos.AuditLog do
 
   @actions ~w(created updated completed reopened deleted canceled escalated)
 
+  def actions, do: @actions
+
   schema "todo_audit_logs" do
     field :action, :string
     field :field, :string

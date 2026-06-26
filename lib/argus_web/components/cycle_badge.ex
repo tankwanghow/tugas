@@ -24,18 +24,18 @@ defmodule ArgusWeb.CycleBadge do
     assigns = assign(assigns, :badge, badge(assigns))
 
     ~H"""
-    <span
+    <div
       :if={@badge}
       class={[
-        "inline-flex items-center gap-0.5 rounded border px-2 py-0.5 text-xs font-medium whitespace-nowrap",
+        "text-center gap-0.5 rounded border px-2 py-0.5 text-xs font-medium",
         @badge.color
       ]}
       data-cycle={@cycle_status}
       data-urgency={@cycle_status == :live && @tier}
     >
-      <span>{@badge.label}</span>
-      <span :if={@badge.date} class="font-normal opacity-80">{@badge.date}</span>
-    </span>
+      <div>{@badge.label}</div>
+      <div :if={@badge.date} class="font-normal opacity-80">{@badge.date}</div>
+    </div>
     """
   end
 

@@ -340,14 +340,16 @@ returns, keyset pagination, LiveView streams), and **escalate into** a real obli
   open the create modal) + `/todos/team-log`. **Desktop and mobile share all non-render logic** via
   `ArgusWeb.TodoLive.IndexHelpers` (mount assigns, load/paginate, the modal + action + status
   handlers) and `ActivityFormat`; each LiveView only owns its `render/1` and thin `handle_event`
-  delegation — the same Desktop+Mobile split used for obligations. Status filter dropdown is **Open ·
-  Completed · Escalated · Canceled · All** (`Todos.parse_status/1`); lists are keyset-paged
-  (`list_todos_page/2`, page size 25, `Todos.Pagination` opaque cursor) for **every** status,
-  including **All** — which orders by lifecycle tier (open → completed → escalated → canceled), then
-  `inserted_at`/`id`, and pages with a composite **tier+timestamp** keyset cursor. (`limit: :all` is a
-  separate **unbounded** mode that loads everything with no cursor — distinct from the `:all` *status*
-  filter.) Rendered as `phx-update="stream"` with a `phx-viewport-bottom` sentinel. `list_todos/2`
-  is the non-paginated context API (used by tests).
+  delegation — the same Desktop+Mobile split used for obligations. **There is no status filter** —
+  the index always renders a single **unified list** (`@list_status = :all` in `IndexHelpers`) so
+  open work and history live together and completing/canceling a todo leaves the (now muted) row in
+  place rather than making it vanish. That list orders by lifecycle tier (open → completed →
+  escalated → canceled), then `inserted_at`/`id`, and is keyset-paged (`list_todos_page/2`, page size
+  25, `Todos.Pagination` opaque cursor, composite **tier+timestamp** cursor). The context still
+  supports every `status:` (`Todos.parse_status/1`) for `list_todos/2` and tests, but the UI only
+  ever requests `:all`. (`limit: :all` is a separate **unbounded** mode that loads everything with no
+  cursor — distinct from the `:all` *status* filter.) Rendered as `phx-update="stream"` with a
+  `phx-viewport-bottom` sentinel. `list_todos/2` is the non-paginated context API (used by tests).
 - **Row animations.** Create/update/delete flash a CSS animation on the row via the `TodoRowEffect`
   colocated hook + `row_effects` assign (cleared on `animationend` → `finish_row_effect`); the
   per-row action `<select>` is driven by the `TodoActionSelect` hook (pushes `todo_action`).

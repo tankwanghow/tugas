@@ -1,6 +1,11 @@
 defmodule ArgusWeb.TodoActionsMenu do
   @moduledoc """
-  Per-todo action picker — escalate, edit, delete, and cancel in a select box.
+  Per-todo action picker — escalate, edit, delete, and cancel.
+
+  Desktop renders the actions as an always-visible inline button row. Mobile hides the
+  same buttons and reveals them (full width) on a press-and-hold of the todo `<li>`
+  (the `TodoRowEffect` hook's long-press branch toggles the row's
+  `[data-todo-actions-menu]`).
   """
   use Phoenix.Component
 
@@ -18,30 +23,60 @@ defmodule ArgusWeb.TodoActionsMenu do
       |> assign(:id_prefix, if(assigns.mobile?, do: "m-todo", else: "todo"))
       |> assign(:options, action_options(assigns))
 
+    if assigns.mobile? do
+      mobile_menu(assigns)
+    else
+      desktop_menu(assigns)
+    end
+  end
+
+  defp desktop_menu(assigns) do
     ~H"""
     <div
       :if={@has_actions?}
       id={"#{@id_prefix}-actions-#{@todo.id}"}
-      class="flex shrink-0 items-center gap-1"
+      class="flex shrink-0 flex-wrap items-center gap-1"
     >
-      <select
-        id={"#{@id_prefix}-actions-select-#{@todo.id}"}
-        name="action"
-        phx-hook="TodoActionSelect"
-        data-todo-id={@todo.id}
-        class="select select-bordered w-16 min-w-0"
-        aria-label="Todo actions"
+      <button
+        :for={option <- @options}
+        type="button"
+        id={option.id}
+        phx-click="todo_action"
+        phx-value-id={@todo.id}
+        phx-value-action={option.value}
+        data-confirm={option.confirm}
+        data-test-action={option.value}
+        class="btn btn-sm"
       >
-        <option value="">🛠️</option>
-        <option
-          :for={option <- @options}
-          id={option.id}
-          value={option.value}
-          data-test-action={option.value}
-        >
-          {option.label}
-        </option>
-      </select>
+        {option.label}
+      </button>
+    </div>
+    """
+  end
+
+  # Hidden by default; the row's `TodoRowEffect` long-press branch flips `display` to reveal it.
+  defp mobile_menu(assigns) do
+    ~H"""
+    <div
+      :if={@has_actions?}
+      id={"#{@id_prefix}-actions-#{@todo.id}"}
+      style="display:none"
+      class="mt-2 w-full gap-2"
+      data-todo-actions-menu
+    >
+      <button
+        :for={option <- @options}
+        type="button"
+        id={option.id}
+        phx-click="todo_action"
+        phx-value-id={@todo.id}
+        phx-value-action={option.value}
+        data-confirm={option.confirm}
+        data-test-action={option.value}
+        class="btn btn-lg flex-1 px-2"
+      >
+        {option.label}
+      </button>
     </div>
     """
   end
@@ -68,7 +103,8 @@ defmodule ArgusWeb.TodoActionsMenu do
       Todo.deletable?(todo),
       "#{prefix}-delete-#{todo.id}",
       "delete",
-      "❌ Delete"
+      "❌ Delete",
+      "Delete this todo?"
     )
     |> maybe_option(
       Todo.cancelable?(todo),
@@ -78,8 +114,10 @@ defmodule ArgusWeb.TodoActionsMenu do
     )
   end
 
-  defp maybe_option(options, true, id, value, label),
-    do: options ++ [%{id: id, value: value, label: label}]
+  defp maybe_option(options, enabled?, id, value, label, confirm \\ nil)
 
-  defp maybe_option(options, false, _id, _value, _label), do: options
+  defp maybe_option(options, true, id, value, label, confirm),
+    do: options ++ [%{id: id, value: value, label: label, confirm: confirm}]
+
+  defp maybe_option(options, false, _id, _value, _label, _confirm), do: options
 end

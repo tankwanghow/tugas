@@ -9,7 +9,7 @@ defmodule ArgusWeb.TodoLive.Index do
   def render(assigns) do
     ~H"""
     <Layouts.app flash={@flash} current_scope={@current_scope}>
-      <div id="todos-page">
+      <div id="todos-page" phx-hook="TodoHighlight" data-highlight-id={@highlight_id}>
         <.header>
           Todos
           <:subtitle>Quick team tasks — separate from duties.</:subtitle>
@@ -25,22 +25,9 @@ defmodule ArgusWeb.TodoLive.Index do
           </:actions>
         </.header>
 
-        <form id="todo-status-filter" phx-change="set_status" class="mt-4 flex items-center gap-2">
-          <label for="todo-status-select" class="text-sm text-base-content/70">Show</label>
-          <select id="todo-status-select" name="status" class="select select-sm w-auto">
-            <option
-              :for={{value, label} <- IndexHelpers.statuses()}
-              value={value}
-              selected={@status == IndexHelpers.parse_status(value)}
-            >
-              {label}
-            </option>
-          </select>
-        </form>
-
         <ul
           id="todos-list"
-          class="mt-6 divide-y divide-base-300 rounded-box border border-base-300"
+          class="mt-1 divide-base-300"
           phx-update="stream"
           phx-viewport-bottom={!@end? && "load_more"}
         >
@@ -51,8 +38,9 @@ defmodule ArgusWeb.TodoLive.Index do
             data-todo-id={todo.id}
             data-effect={IndexHelpers.row_effect_name(@row_effects, todo.id)}
             class={[
-              "p-3 space-y-2 border-l-4 border-transparent",
+              "px-3 py-2 border-1 mb-1 shadow mb-1",
               IndexHelpers.row_muted?(todo) && "opacity-60",
+              @highlight_id == todo.id && "todo-row-highlight",
               IndexHelpers.row_effect_class(@row_effects, todo.id)
             ]}
           >
@@ -88,17 +76,15 @@ defmodule ArgusWeb.TodoLive.Index do
                   View duty
                 </.link>
               </div>
-              <.todo_actions_menu todo={todo} current_scope={@current_scope} />
+              <div class="flex shrink-0 items-start gap-1">
+                <.todo_history todo={todo} logs={Map.get(@audit_by_id, todo.id, [])} />
+                <.todo_actions_menu todo={todo} current_scope={@current_scope} />
+              </div>
             </div>
-            <.audit_trail
-              todo={todo}
-              logs={Map.get(@audit_by_id, todo.id, [])}
-              expanded?={@expanded_audit_id == todo.id}
-            />
           </li>
         </ul>
         <p :if={@empty?} id="todos-empty" class="mt-6 text-sm text-base-content/60">
-          {IndexHelpers.empty_message(@status)}
+          {IndexHelpers.empty_message()}
         </p>
       </div>
 
@@ -112,7 +98,13 @@ defmodule ArgusWeb.TodoLive.Index do
             phx-submit="save"
             class="mt-4 space-y-3"
           >
-            <.input field={@todo_form[:title]} type="text" label="Title" required />
+            <.input
+              field={@todo_form[:title]}
+              type="text"
+              label="Title"
+              required
+              phx-mounted={JS.focus()}
+            />
             <div class="modal-action">
               <button type="button" class="btn" phx-click="dismiss_form">Cancel</button>
               <.button class="btn btn-primary" phx-disable-with="Saving…">{@submit_label}</.button>
@@ -153,40 +145,32 @@ defmodule ArgusWeb.TodoLive.Index do
 
   attr :todo, Todo, required: true
   attr :logs, :list, required: true
-  attr :expanded?, :boolean, required: true
 
-  defp audit_trail(assigns) do
+  defp todo_history(assigns) do
     ~H"""
-    <div :if={@logs != []} class="pl-8">
-      <button
-        type="button"
-        phx-click="toggle_audit"
-        phx-value-id={@todo.id}
-        class="text-xs text-base-content/50 hover:text-base-content"
-      >
-        {if @expanded?, do: "Hide history", else: "Show history (#{length(@logs)})"}
-      </button>
-      <ul
-        :if={@expanded?}
-        id={"todo-audit-#{@todo.id}"}
-        class="mt-1 space-y-1 text-xs text-base-content/60"
-      >
-        <li :for={log <- @logs}>
-          <span class="font-medium">{ActivityFormat.audit_action_label(log.action)}</span>
-          by {ActivityFormat.display_name(log.user)}
-          <span :if={log.field}>
-            — {log.field}: {log.old_value || "—"} → {log.new_value || "—"}
-          </span>
-          <span class="text-base-content/40"> · {ActivityFormat.format_time(log.inserted_at)}</span>
+    <details :if={@logs != []} id={"todo-history-#{@todo.id}"} class="dropdown dropdown-end">
+      <summary class="btn btn-sm list-none">
+        <.icon name="hero-clock-mini" class="size-4" /> History ({length(@logs)})
+      </summary>
+      <ul class="dropdown-content menu z-10 mt-1 w-80 gap-1 rounded-box bg-base-100 p-2 text-xs text-base-content/70 shadow">
+        <li :for={log <- @logs} class="leading-snug">
+          <div class="block whitespace-normal">
+            <span class="font-medium">{ActivityFormat.audit_action_label(log.action)}</span>
+            by {ActivityFormat.display_name(log.user)}
+            <span :if={log.field}>
+              — {log.field}: {log.old_value || "—"} → {log.new_value || "—"}
+            </span>
+            <span class="text-base-content/40"> · {ActivityFormat.format_time(log.inserted_at)}</span>
+          </div>
         </li>
       </ul>
-    </div>
+    </details>
     """
   end
 
   @impl true
-  def mount(_params, _session, socket) do
-    {:ok, IndexHelpers.mount_assigns(socket)}
+  def mount(params, _session, socket) do
+    {:ok, IndexHelpers.mount_assigns(socket, params)}
   end
 
   @impl true
@@ -234,23 +218,12 @@ defmodule ArgusWeb.TodoLive.Index do
     {:noreply, IndexHelpers.close_cancel_modal(socket)}
   end
 
-  def handle_event("set_status", params, socket) do
-    IndexHelpers.handle_set_status(socket, params) |> IndexHelpers.handle_result()
-  end
-
   def handle_event("todo_action", params, socket) do
     IndexHelpers.handle_todo_action(socket, params) |> IndexHelpers.handle_result()
   end
 
   def handle_event("finish_row_effect", params, socket) do
     IndexHelpers.handle_finish_row_effect(socket, params) |> IndexHelpers.handle_result()
-  end
-
-  def handle_event("toggle_audit", %{"id" => id}, socket) do
-    expanded =
-      if socket.assigns.expanded_audit_id == id, do: nil, else: id
-
-    {:noreply, assign(socket, :expanded_audit_id, expanded)}
   end
 
   def handle_event("load_more", _params, socket) do
