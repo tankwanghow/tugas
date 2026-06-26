@@ -5,7 +5,7 @@ defmodule Argus.Todos.AuditLog do
   alias Argus.Accounts.User
   alias Argus.Todos.Todo
 
-  @actions ~w(created updated completed reopened deleted)
+  @actions ~w(created updated completed reopened deleted canceled escalated)
 
   schema "todo_audit_logs" do
     field :action, :string

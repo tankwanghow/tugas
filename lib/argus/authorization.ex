@@ -6,7 +6,14 @@ defmodule Argus.Authorization do
   alias Argus.Accounts.Scope
   alias Argus.Obligations.Obligation
 
-  @todo_actions [:view_todos, :create_todo, :edit_todo, :complete_todo, :delete_todo]
+  @todo_actions [
+    :view_todos,
+    :create_todo,
+    :edit_todo,
+    :complete_todo,
+    :delete_todo,
+    :cancel_todo
+  ]
 
   def can?(%Scope{role: :admin}, _action), do: true
 

@@ -69,6 +69,13 @@ defmodule ArgusWeb.ModalEscape do
   Closes the todo editor modal on `socket`, if open.
   """
   def close_todo_modal(socket) do
+    socket =
+      if socket.assigns[:canceling_todo] do
+        Phoenix.Component.assign(socket, canceling_todo: nil, cancel_form: nil)
+      else
+        socket
+      end
+
     if socket.assigns[:todo_form] do
       Phoenix.Component.assign(socket, todo_form: nil, editing: nil)
     else

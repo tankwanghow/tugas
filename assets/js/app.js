@@ -27,6 +27,8 @@ import topbar from "../vendor/topbar"
 import * as pdfjsLib from "../vendor/pdfjs/pdf.min.mjs"
 import {UploadDirect} from "./upload_direct"
 import {UploadUiPersist} from "./upload_ui_persist"
+import {TodoActionSelect} from "./todo_action_select"
+import {TodoRowEffect} from "./todo_row_effect"
 
 // The worker is a separate esbuild entry (js/pdf.worker.js) served as a static
 // asset; the browser only fetches it when a PDF is actually previewed.
@@ -61,7 +63,7 @@ const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, PdfThumb, UploadDirect, UploadUiPersist},
+  hooks: {...colocatedHooks, PdfThumb, UploadDirect, UploadUiPersist, TodoActionSelect, TodoRowEffect},
 })
 
 // Show progress bar on live navigation and form submits

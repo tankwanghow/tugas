@@ -10,7 +10,9 @@ defmodule ArgusWeb.MobileLive.Dashboard do
     ~H"""
     <Layouts.mobile_app flash={@flash} current_scope={@current_scope} active={:duties}>
       <div class="sticky top-0 z-30 px-4 py-3 bg-base-100/95 backdrop-blur border-b border-base-200 space-y-2">
-        <h1 class="text-lg font-semibold truncate">{@current_scope.entity.name}</h1>
+        <h1 class="text-lg font-semibold truncate">
+          Duties - <span class="text-base-content/50">{@current_scope.entity.slug}</span>
+        </h1>
         <div class="flex">
           <div class="w-[65%]">
             <input

@@ -14,15 +14,19 @@ defmodule ArgusWeb.ObligationLive.CreateForm do
   alias Argus.Entities
   alias Argus.Obligations
   alias Argus.Obligations.Obligation
+  alias Argus.Todos
+
+  @obligation_title_max 60
 
   @doc "Assigns `:type_options`, `:member_options`, and the empty `:form`."
-  def load_form(socket) do
+  def load_form(socket, params \\ %{}) do
     scope = socket.assigns.current_scope
-    changeset = Obligations.change_obligation(%Obligation{})
+    changeset = obligation_changeset(scope, params)
 
     socket
     |> assign(:type_options, type_options(scope))
     |> assign(:member_options, member_options(scope))
+    |> assign(:from_todo_id, params["from_todo"])
     |> assign_form(changeset)
   end
 
@@ -45,10 +49,13 @@ defmodule ArgusWeb.ObligationLive.CreateForm do
 
     case Obligations.create_obligation(scope, map_create_params(params)) do
       {:ok, obligation} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Duty created.")
-         |> push_navigate(to: redirect_path.(scope, obligation))}
+        socket =
+          socket
+          |> maybe_record_escalation(scope, obligation)
+          |> put_flash(:info, flash_message(socket.assigns[:from_todo_id]))
+          |> push_navigate(to: redirect_path.(scope, obligation))
+
+        {:noreply, socket}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign_form(socket, changeset)}
@@ -64,6 +71,55 @@ defmodule ArgusWeb.ObligationLive.CreateForm do
   defp assign_form(socket, %Ecto.Changeset{} = changeset) do
     assign(socket, :form, to_form(changeset, as: "obligation"))
   end
+
+  defp obligation_changeset(scope, %{"from_todo" => todo_id}) when is_binary(todo_id) do
+    case Todos.get_todo_for_escalation(scope, todo_id) do
+      {:ok, todo} ->
+        %Obligation{}
+        |> Obligations.change_obligation(%{
+          title: truncate_title(todo.title),
+          open_note: "Escalated from todo: #{todo.title}"
+        })
+
+      _ ->
+        %Obligation{} |> Obligations.change_obligation(%{})
+    end
+  end
+
+  defp obligation_changeset(_scope, _params) do
+    %Obligation{} |> Obligations.change_obligation(%{})
+  end
+
+  defp maybe_record_escalation(socket, scope, obligation) do
+    case socket.assigns[:from_todo_id] do
+      todo_id when is_binary(todo_id) ->
+        case Todos.get_todo_for_escalation(scope, todo_id) do
+          {:ok, todo} ->
+            case Todos.record_escalation(scope, todo, obligation) do
+              {:ok, _} ->
+                socket
+
+              _ ->
+                put_flash(socket, :warning, "Duty created, but the todo could not be linked.")
+            end
+
+          _ ->
+            socket
+        end
+
+      _ ->
+        socket
+    end
+  end
+
+  defp flash_message(nil), do: "Duty created."
+  defp flash_message(_), do: "Duty created and todo escalated."
+
+  defp truncate_title(title) when is_binary(title) do
+    String.slice(title, 0, @obligation_title_max)
+  end
+
+  defp truncate_title(_), do: ""
 
   defp type_options(scope) do
     Enum.map(Obligations.list_types(scope), &{&1.name, &1.id})

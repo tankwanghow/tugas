@@ -409,10 +409,70 @@
 }
 .argus-underline:hover { background-size: 100% 2px; }
 
+/* Todo row action highlights — delay lets the row paint before the flash starts */
+@keyframes todo-row-created {
+  0%,
+  25% {
+    background-color: color-mix(in oklch, var(--color-success) 65%, var(--color-base-100));
+    border-left-color: var(--color-success);
+  }
+  100% {
+    background-color: transparent;
+    border-left-color: transparent;
+  }
+}
+
+@keyframes todo-row-updated {
+  0%,
+  25% {
+    background-color: color-mix(in oklch, var(--color-warning) 55%, var(--color-base-100));
+    border-left-color: var(--color-warning);
+  }
+  100% {
+    background-color: transparent;
+    border-left-color: transparent;
+  }
+}
+
+/* Delete: red flash (0–36%) then collapse (36–100%) in one timeline */
+@keyframes todo-row-deleted {
+  0%,
+  36.364% {
+    background-color: color-mix(in oklch, var(--color-error) 45%, transparent);
+    opacity: 1;
+    max-height: 32rem;
+  }
+  100% {
+    background-color: color-mix(in oklch, var(--color-error) 45%, transparent);
+    opacity: 0;
+    max-height: 0;
+  }
+}
+
+.todo-row--created {
+  animation: todo-row-created 2.5s ease-out 300ms forwards;
+}
+
+.todo-row--updated {
+  animation: todo-row-updated 2.5s ease-out 150ms forwards;
+}
+
+.todo-row--deleted {
+  overflow: hidden;
+  animation: todo-row-deleted 1.1s ease-in forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .argus-ring, .argus-sweep, .argus-float, .argus-reveal {
     animation: none;
     opacity: 1;
+  }
+
+  .todo-row--created,
+  .todo-row--updated,
+  .todo-row--deleted {
+    animation-duration: 0.01ms;
+    animation-delay: 0ms;
   }
 }
 

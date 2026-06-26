@@ -69,9 +69,9 @@ defmodule ArgusWeb.ObligationLive.Form do
   end
 
   @impl true
-  def mount(_params, _session, socket) do
+  def mount(params, _session, socket) do
     if Argus.Authorization.can?(socket.assigns.current_scope, :create_obligation) do
-      {:ok, CreateForm.load_form(socket)}
+      {:ok, CreateForm.load_form(socket, params)}
     else
       {:ok,
        socket

@@ -8,17 +8,28 @@ defmodule Argus.Todos do
   alias Ecto.Multi
   alias Argus.Accounts.Scope
   alias Argus.Authorization
+  alias Argus.Obligations.Obligation
   alias Argus.Repo
-  alias Argus.Todos.{AuditLog, Todo}
+  alias Argus.Todos.{AuditLog, Pagination, Todo}
 
-  def list_todos(%Scope{} = scope) do
+  @statuses ~w(open completed escalated canceled all)a
+  @page_size 25
+
+  def statuses, do: @statuses
+
+  def list_todos(scope, opts \\ [])
+
+  def list_todos(%Scope{} = scope, opts) do
+    status = parse_status(Keyword.get(opts, :status, :open))
+
     with {:ok, entity} <- require_entity(scope),
          true <- Authorization.can?(scope, :view_todos) do
       todos =
         Todo
-        |> where([t], t.entity_id == ^entity.id and is_nil(t.deleted_at))
-        |> order_by([t], desc: is_nil(t.completed_at), desc: t.inserted_at)
-        |> preload([:created_by, :completed_by])
+        |> entity_todos(entity.id)
+        |> apply_status_filter(status)
+        |> apply_status_order(status)
+        |> preload([:created_by, :completed_by, :escalated_obligation])
         |> Repo.all()
 
       {:ok, todos}
@@ -28,12 +39,52 @@ defmodule Argus.Todos do
     end
   end
 
-  def list_todos(_), do: :not_authorise
+  def list_todos(_, _opts), do: :not_authorise
+
+  def list_todos_page(scope, opts \\ [])
+
+  def list_todos_page(%Scope{} = scope, opts) do
+    status = parse_status(Keyword.get(opts, :status, :open))
+    cursor = Pagination.decode(Keyword.get(opts, :cursor))
+    limit = Keyword.get(opts, :limit, @page_size)
+
+    with {:ok, entity} <- require_entity(scope),
+         true <- Authorization.can?(scope, :view_todos) do
+      result =
+        Todo
+        |> entity_todos(entity.id)
+        |> apply_status_filter(status)
+        |> apply_status_order(status)
+        |> apply_page_cursor(status, cursor)
+        |> preload([:created_by, :completed_by, :escalated_obligation])
+        |> maybe_limit(limit)
+        |> Repo.all()
+        |> paginate(status, limit)
+
+      {:ok, result}
+    else
+      :no_entity -> :not_authorise
+      false -> :not_authorise
+    end
+  end
+
+  def list_todos_page(_, _), do: :not_authorise
+
+  def parse_status(:completed), do: :completed
+  def parse_status(:escalated), do: :escalated
+  def parse_status(:canceled), do: :canceled
+  def parse_status(:all), do: :all
+  def parse_status(:open), do: :open
+  def parse_status("completed"), do: :completed
+  def parse_status("escalated"), do: :escalated
+  def parse_status("canceled"), do: :canceled
+  def parse_status("all"), do: :all
+  def parse_status(_), do: :open
 
   def get_todo(%Scope{} = scope, id) do
     with {:ok, entity} <- require_entity(scope),
          true <- Authorization.can?(scope, :view_todos),
-         %Todo{} = todo <- fetch_live_todo(entity.id, id) do
+         %Todo{} = todo <- fetch_active_todo(entity.id, id) do
       {:ok, todo}
     else
       :no_entity -> :not_authorise
@@ -43,6 +94,24 @@ defmodule Argus.Todos do
   end
 
   def get_todo(_, _), do: :not_authorise
+
+  def get_todo_for_escalation(%Scope{} = scope, id) do
+    with {:ok, entity} <- require_entity(scope),
+         true <- Authorization.can?(scope, :view_todos),
+         %Todo{} = todo <- fetch_active_todo(entity.id, id) do
+      if Todo.completed?(todo) do
+        :not_found
+      else
+        {:ok, todo}
+      end
+    else
+      :no_entity -> :not_authorise
+      false -> :not_authorise
+      nil -> :not_found
+    end
+  end
+
+  def get_todo_for_escalation(_, _), do: :not_authorise
 
   def change_todo(%Todo{} = todo, attrs \\ %{}) do
     Todo.changeset(todo, attrs)
@@ -80,7 +149,10 @@ defmodule Argus.Todos do
       not Authorization.can?(scope, :edit_todo) ->
         :not_authorise
 
-      not live_todo?(todo) ->
+      not Todo.active?(todo) ->
+        :not_found
+
+      Todo.completed?(todo) ->
         :not_found
 
       true ->
@@ -110,7 +182,7 @@ defmodule Argus.Todos do
       not Authorization.can?(scope, :complete_todo) ->
         :not_authorise
 
-      not live_todo?(todo) ->
+      not Todo.active?(todo) ->
         :not_found
 
       Todo.completed?(todo) ->
@@ -126,8 +198,14 @@ defmodule Argus.Todos do
       not Authorization.can?(scope, :delete_todo) ->
         :not_authorise
 
-      not live_todo?(todo) ->
+      not Todo.active?(todo) ->
         :not_found
+
+      Todo.completed?(todo) ->
+        {:error, :not_deletable}
+
+      not Todo.deletable?(todo) ->
+        {:error, :delete_window_expired}
 
       true ->
         now = DateTime.utc_now(:second)
@@ -141,6 +219,79 @@ defmodule Argus.Todos do
         |> Repo.transaction()
         |> case do
           {:ok, %{todo: deleted}} -> {:ok, deleted}
+          {:error, _op, reason, _} -> {:error, reason}
+        end
+    end
+  end
+
+  def cancel_todo(%Scope{} = scope, %Todo{} = todo, note) do
+    cond do
+      not Authorization.can?(scope, :cancel_todo) ->
+        :not_authorise
+
+      not Todo.active?(todo) ->
+        :not_found
+
+      Todo.completed?(todo) ->
+        {:error, :not_cancelable}
+
+      Todo.deletable?(todo) ->
+        {:error, :not_cancelable}
+
+      true ->
+        with :ok <- validate_action_note(note) do
+          now = DateTime.utc_now(:second)
+
+          Multi.new()
+          |> Multi.update(:todo, Todo.cancel_changeset(todo, scope.user.id, now))
+          |> Multi.run(:audit, fn repo, %{todo: updated} ->
+            insert_audit!(repo, scope, updated, "canceled", "note", nil, note)
+            {:ok, :audited}
+          end)
+          |> Repo.transaction()
+          |> case do
+            {:ok, %{todo: canceled}} -> {:ok, canceled}
+            {:error, _op, reason, _} -> {:error, reason}
+          end
+        end
+    end
+  end
+
+  def record_escalation(%Scope{} = scope, %Todo{} = todo, %Obligation{} = obligation) do
+    cond do
+      not Authorization.can?(scope, :create_obligation) ->
+        :not_authorise
+
+      Todo.completed?(todo) ->
+        :not_found
+
+      not Todo.active?(todo) ->
+        :not_found
+
+      todo.entity_id != obligation.entity_id ->
+        {:error, :invalid_escalation}
+
+      true ->
+        now = DateTime.utc_now(:second)
+
+        Multi.new()
+        |> Multi.update(:todo, Todo.escalate_changeset(todo, scope.user.id, obligation.id, now))
+        |> Multi.run(:audit, fn repo, %{todo: updated} ->
+          insert_audit!(
+            repo,
+            scope,
+            updated,
+            "escalated",
+            "obligation_id",
+            nil,
+            obligation.id
+          )
+
+          {:ok, :audited}
+        end)
+        |> Repo.transaction()
+        |> case do
+          {:ok, %{todo: escalated}} -> {:ok, escalated}
           {:error, _op, reason, _} -> {:error, reason}
         end
     end
@@ -224,15 +375,191 @@ defmodule Argus.Todos do
     |> repo.insert!()
   end
 
+  defp validate_action_note(note) when note in [nil, ""], do: {:error, :note_required}
+  defp validate_action_note(_), do: :ok
+
   defp require_entity(%Scope{entity: %_{} = entity}), do: {:ok, entity}
   defp require_entity(_), do: :no_entity
 
-  defp live_todo?(%Todo{deleted_at: nil}), do: true
-  defp live_todo?(_), do: false
+  defp apply_status_filter(query, :open) do
+    query
+    |> where([t], is_nil(t.completed_at))
+    |> where([t], is_nil(t.canceled_at))
+    |> where([t], is_nil(t.escalated_at))
+  end
 
-  defp fetch_live_todo(entity_id, id) do
+  defp apply_status_filter(query, :completed) do
+    query
+    |> where([t], not is_nil(t.completed_at))
+    |> where([t], is_nil(t.canceled_at))
+    |> where([t], is_nil(t.escalated_at))
+  end
+
+  defp apply_status_filter(query, :escalated) do
+    where(query, [t], not is_nil(t.escalated_at))
+  end
+
+  defp apply_status_filter(query, :canceled) do
+    where(query, [t], not is_nil(t.canceled_at))
+  end
+
+  defp apply_status_filter(query, :all), do: query
+
+  defp apply_status_order(query, :completed) do
+    order_by(query, [t], desc: t.completed_at, desc: t.id)
+  end
+
+  defp apply_status_order(query, :escalated) do
+    order_by(query, [t], desc: t.escalated_at, desc: t.id)
+  end
+
+  defp apply_status_order(query, :canceled) do
+    order_by(query, [t], desc: t.canceled_at, desc: t.id)
+  end
+
+  defp apply_status_order(query, :open) do
+    order_by(query, [t], desc: t.inserted_at, desc: t.id)
+  end
+
+  defp apply_status_order(query, :all) do
+    order_by(query, [t],
+      desc: is_nil(t.canceled_at) and is_nil(t.escalated_at) and is_nil(t.completed_at),
+      desc: is_nil(t.canceled_at) and is_nil(t.escalated_at) and not is_nil(t.completed_at),
+      desc: not is_nil(t.escalated_at),
+      desc: not is_nil(t.canceled_at),
+      desc: t.inserted_at,
+      desc: t.id
+    )
+  end
+
+  defp apply_page_cursor(query, _status, nil), do: query
+
+  defp apply_page_cursor(query, :open, %{key: k, id: id}) do
+    case DateTime.from_iso8601(k) do
+      {:ok, ts, _} ->
+        where(query, [t], t.inserted_at < ^ts or (t.inserted_at == ^ts and t.id < ^id))
+
+      _ ->
+        query
+    end
+  end
+
+  defp apply_page_cursor(query, :completed, %{key: k, id: id}) do
+    case DateTime.from_iso8601(k) do
+      {:ok, ts, _} ->
+        where(query, [t], t.completed_at < ^ts or (t.completed_at == ^ts and t.id < ^id))
+
+      _ ->
+        query
+    end
+  end
+
+  defp apply_page_cursor(query, :escalated, %{key: k, id: id}) do
+    case DateTime.from_iso8601(k) do
+      {:ok, ts, _} ->
+        where(query, [t], t.escalated_at < ^ts or (t.escalated_at == ^ts and t.id < ^id))
+
+      _ ->
+        query
+    end
+  end
+
+  defp apply_page_cursor(query, :canceled, %{key: k, id: id}) do
+    case DateTime.from_iso8601(k) do
+      {:ok, ts, _} ->
+        where(query, [t], t.canceled_at < ^ts or (t.canceled_at == ^ts and t.id < ^id))
+
+      _ ->
+        query
+    end
+  end
+
+  defp apply_page_cursor(query, :all, %{key: k, id: id}) do
+    case String.split(k, ":", parts: 2) do
+      [tier_str, ts_str] ->
+        with {tier, ""} <- Integer.parse(tier_str),
+             {:ok, ts, _} <- DateTime.from_iso8601(ts_str) do
+          where(
+            query,
+            [t],
+            fragment(
+              "(CASE WHEN ? IS NOT NULL THEN 3 WHEN ? IS NOT NULL THEN 2 WHEN ? IS NOT NULL THEN 1 ELSE 0 END) < ? OR
+               ((CASE WHEN ? IS NOT NULL THEN 3 WHEN ? IS NOT NULL THEN 2 WHEN ? IS NOT NULL THEN 1 ELSE 0 END) = ? AND
+                (? < ? OR (? = ? AND ? < ?)))",
+              t.canceled_at,
+              t.escalated_at,
+              t.completed_at,
+              ^tier,
+              t.canceled_at,
+              t.escalated_at,
+              t.completed_at,
+              ^tier,
+              t.inserted_at,
+              ^ts,
+              t.inserted_at,
+              ^ts,
+              t.id,
+              ^id
+            )
+          )
+        else
+          _ -> query
+        end
+
+      _ ->
+        query
+    end
+  end
+
+  defp maybe_limit(query, :all), do: query
+  defp maybe_limit(query, limit), do: limit(query, ^(limit + 1))
+
+  defp paginate(rows, _status, :all), do: %{rows: rows, cursor: nil, end?: true}
+
+  defp paginate(rows, status, limit) do
+    {page, rest} = Enum.split(rows, limit)
+    has_more = rest != []
+
+    cursor =
+      if has_more do
+        last = List.last(page)
+        Pagination.encode(%{key: cursor_key(status, last), id: last.id})
+      end
+
+    %{rows: page, cursor: cursor, end?: not has_more}
+  end
+
+  defp cursor_key(:open, %Todo{inserted_at: ts}), do: DateTime.to_iso8601(ts)
+  defp cursor_key(:completed, %Todo{completed_at: ts}), do: DateTime.to_iso8601(ts)
+  defp cursor_key(:escalated, %Todo{escalated_at: ts}), do: DateTime.to_iso8601(ts)
+  defp cursor_key(:canceled, %Todo{canceled_at: ts}), do: DateTime.to_iso8601(ts)
+
+  defp cursor_key(:all, %Todo{} = todo) do
+    "#{all_tier(todo)}:#{DateTime.to_iso8601(todo.inserted_at)}"
+  end
+
+  defp all_tier(%Todo{canceled_at: %DateTime{}}), do: 3
+  defp all_tier(%Todo{escalated_at: %DateTime{}}), do: 2
+  defp all_tier(%Todo{completed_at: %DateTime{}}), do: 1
+  defp all_tier(_), do: 0
+
+  defp entity_todos(query, entity_id) do
+    query
+    |> where([t], t.entity_id == ^entity_id)
+    |> where([t], is_nil(t.deleted_at))
+  end
+
+  defp workable_todos(query, entity_id) do
+    query
+    |> entity_todos(entity_id)
+    |> where([t], is_nil(t.canceled_at))
+    |> where([t], is_nil(t.escalated_at))
+  end
+
+  defp fetch_active_todo(entity_id, id) do
     Todo
-    |> where([t], t.id == ^id and t.entity_id == ^entity_id and is_nil(t.deleted_at))
+    |> workable_todos(entity_id)
+    |> where([t], t.id == ^id)
     |> preload([:created_by, :completed_by])
     |> Repo.one()
   end

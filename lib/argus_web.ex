@@ -87,6 +87,9 @@ defmodule ArgusWeb do
       # Core UI components
       import ArgusWeb.CoreComponents
       import ArgusWeb.CycleBadge
+      import ArgusWeb.TodoBadge
+      import ArgusWeb.TodoTeamActivity
+      import ArgusWeb.TodoActionsMenu
       import ArgusWeb.DoneDocumentChecklist
       import ArgusWeb.EventMeta
       import ArgusWeb.UrgencyBadge

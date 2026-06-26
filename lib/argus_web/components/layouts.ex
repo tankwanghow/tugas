@@ -112,18 +112,15 @@ defmodule ArgusWeb.Layouts do
       <div class="mx-auto max-w-4xl flex items-center justify-center gap-1 flex-wrap text-sm overflow-visible">
         <.entity_nav_link
           href={~p"/entities/#{@current_scope.entity.slug}"}
-          icon="hero-home-micro"
-          label="Duties"
-        />
-        <.entity_nav_link
-          href={~p"/entities/#{@current_scope.entity.slug}/obligation-types"}
-          icon="hero-tag-micro"
-          label="Types"
+          label="💼 Duties"
         />
         <.entity_nav_link
           href={~p"/entities/#{@current_scope.entity.slug}/todos"}
-          icon="hero-clipboard-document-check-micro"
-          label="Todos"
+          label="📑 Todos"
+        />
+        <.entity_nav_link
+          href={~p"/entities/#{@current_scope.entity.slug}/obligation-types"}
+          label="🏷️ Types"
         />
       </div>
     </nav>
@@ -131,7 +128,7 @@ defmodule ArgusWeb.Layouts do
   end
 
   attr :href, :string, required: true
-  attr :icon, :string, required: true
+  attr :icon, :string, default: nil
   attr :label, :string, required: true
 
   defp entity_nav_link(assigns) do
@@ -140,7 +137,7 @@ defmodule ArgusWeb.Layouts do
       navigate={@href}
       class="flex items-center gap-1.5 px-3 py-2.5 rounded-md text-base-content/70 hover:text-base-content hover:bg-base-300/50 transition-colors whitespace-nowrap"
     >
-      <.icon name={@icon} class="size-4" />
+      <.icon :if={@icon} name={@icon} class="size-4" />
       {@label}
     </.link>
     """
@@ -275,6 +272,18 @@ defmodule ArgusWeb.Layouts do
           >
             <.icon name="hero-users-micro" class="size-4 text-base-content/50" /> Members
           </.link>
+          <.link
+            :if={
+              entity_scope?(@current_scope) &&
+                Argus.Authorization.can?(@current_scope, :view_todos)
+            }
+            id="todo-team-log-nav-link"
+            navigate={~p"/entities/#{@current_scope.entity.slug}/todos/team-log"}
+            class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-base-200 rounded transition-colors"
+          >
+            <.icon name="hero-clipboard-document-list-micro" class="size-4 text-base-content/50" />
+            Todo team log
+          </.link>
         </div>
 
         <div class="border-t border-base-200 py-1">
@@ -379,8 +388,8 @@ defmodule ArgusWeb.Layouts do
               @active != :new_todo && "text-base-content/60"
             ]}
           >
-            <.icon name="hero-plus-circle" class="size-6" />
-            <span class="text-[10px] leading-tight text-center">New Todo</span>
+            <span class="text-2xl">✚</span>
+            <span class="text-sm leading-tight text-center">New Todo</span>
           </.link>
         </li>
         <li>
@@ -393,8 +402,8 @@ defmodule ArgusWeb.Layouts do
               @active != :todos && "text-base-content/60"
             ]}
           >
-            <.icon name="hero-clipboard-document-check" class="size-6" />
-            <span class="text-[10px] leading-tight text-center">Todos</span>
+            <span class="text-2xl">📑</span>
+            <span class="text-sm leading-tight text-center">Todos</span>
           </.link>
         </li>
         <li>
@@ -407,8 +416,8 @@ defmodule ArgusWeb.Layouts do
               @active != :new_duty && "text-base-content/60"
             ]}
           >
-            <.icon name="hero-plus-circle" class="size-6" />
-            <span class="text-[10px] leading-tight text-center">New Duties</span>
+            <span class="text-2xl">✚</span>
+            <span class="text-sm leading-tight text-center">New Duty</span>
           </.link>
         </li>
         <li>
@@ -421,8 +430,8 @@ defmodule ArgusWeb.Layouts do
               @active != :duties && "text-base-content/60"
             ]}
           >
-            <.icon name="hero-home" class="size-6" />
-            <span class="text-[10px] leading-tight text-center">Duties</span>
+            <span class="text-2xl">💼</span>
+            <span class="text-sm leading-tight text-center">Duties</span>
           </.link>
         </li>
         <li>
@@ -435,8 +444,8 @@ defmodule ArgusWeb.Layouts do
               @active != :more && "text-base-content/60"
             ]}
           >
-            <.icon name="hero-bars-3" class="size-6" />
-            <span class="text-[10px] leading-tight text-center">More</span>
+            <span class="text-2xl">☰</span>
+            <span class="text-sm leading-tight text-center">More</span>
           </button>
         </li>
       </ul>
@@ -489,6 +498,19 @@ defmodule ArgusWeb.Layouts do
             >
               <.icon name="hero-tag" class="size-5 text-base-content/60" />
               <span>Types</span>
+            </.link>
+          </li>
+          <li :if={
+            @current_scope && @current_scope.entity &&
+              Argus.Authorization.can?(@current_scope, :view_todos)
+          }>
+            <.link
+              id="m-more-todo-team-log-link"
+              navigate={~p"/m/#{@current_scope.entity.slug}/todos/team-log"}
+              class="flex items-center gap-3 px-4 py-4 active:bg-base-200"
+            >
+              <.icon name="hero-clipboard-document-list" class="size-5 text-base-content/60" />
+              <span>Todo team log</span>
             </.link>
           </li>
           <li :if={@current_scope && @current_scope.entity}>

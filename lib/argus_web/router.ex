@@ -64,12 +64,14 @@ defmodule ArgusWeb.Router do
       live "/entities/:entity_slug/obligation-types", ObligationTypeLive.Index, :index
       live "/entities/:entity_slug/members", MembershipLive.Index, :index
       live "/entities/:entity_slug/invite-session/:role", MembershipLive.InviteSession, :show
+      live "/entities/:entity_slug/todos/team-log", TodoLive.TeamLog, :index
       live "/entities/:entity_slug/todos", TodoLive.Index, :index
 
       live "/m/:entity_slug", MobileLive.Dashboard, :show
       live "/m/:entity_slug/obligations/new", MobileLive.ObligationForm, :new
       live "/m/:entity_slug/obligations/:id", MobileLive.ObligationShow, :show
       live "/m/:entity_slug/obligation-types", MobileLive.ObligationTypes, :index
+      live "/m/:entity_slug/todos/team-log", MobileLive.TodoTeamLog, :index
       live "/m/:entity_slug/todos", MobileLive.Todos, :index
       live "/m/:entity_slug/todos/new", MobileLive.Todos, :new
       live "/m/:entity_slug/invite-session/:role", MobileLive.InviteSession, :show

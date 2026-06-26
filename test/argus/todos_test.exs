@@ -4,12 +4,13 @@ defmodule Argus.TodosTest do
   @moduletag :todos
 
   alias Argus.Accounts.Scope
+  alias Argus.Repo
   alias Argus.Todos
   alias Argus.Todos.Todo
 
   import Argus.AccountsFixtures, only: [user_fixture: 0]
-  import Argus.EntitiesFixtures, only: [entity_scope_fixture: 0]
-  import Argus.ObligationsFixtures, only: [member_scope_on_entity: 1]
+  import Argus.EntitiesFixtures, only: [entity_scope_fixture: 0, manager_scope_fixture: 0]
+  import Argus.ObligationsFixtures, only: [member_scope_on_entity: 1, type_fixture: 1]
 
   describe "authorization" do
     test "list_todos/1 and get_todo/2 return :not_authorise without entity scope" do
@@ -43,14 +44,44 @@ defmodule Argus.TodosTest do
       assert hd(listed).id == todo.id
     end
 
-    test "lists pending todos before completed ones" do
-      scope = entity_scope_fixture()
-      {:ok, pending} = Todos.create_todo(scope, %{title: "Pending"})
-      {:ok, todo} = Todos.create_todo(scope, %{title: "Complete"})
-      assert {:ok, done} = Todos.toggle_complete(scope, todo)
+    test "filters open, completed, escalated, canceled, and all todos" do
+      manager = manager_scope_fixture()
+      type = type_fixture(manager.entity)
+      {:ok, pending} = Todos.create_todo(manager, %{title: "Pending"})
+      {:ok, todo} = Todos.create_todo(manager, %{title: "Complete"})
+      assert {:ok, done} = Todos.toggle_complete(manager, todo)
 
-      assert {:ok, listed} = Todos.list_todos(scope)
-      assert Enum.map(listed, & &1.title) == ["Pending", "Complete"]
+      {:ok, to_escalate} = Todos.create_todo(manager, %{title: "Escalate me"})
+      {:ok, stale} = Todos.create_todo(manager, %{title: "Cancel me"})
+      stale = backdate_todo!(stale, 49)
+
+      assert {:ok, obligation} =
+               Argus.Obligations.create_obligation(manager, %{
+                 title: "Escalate me",
+                 obligation_type_id: type.id,
+                 due_by: ~D[2026-07-01],
+                 open_note: "Escalated"
+               })
+
+      assert {:ok, escalated} = Todos.record_escalation(manager, to_escalate, obligation)
+      assert {:ok, canceled} = Todos.cancel_todo(manager, stale, "No longer needed")
+
+      assert {:ok, open} = Todos.list_todos(manager, status: :open)
+      assert Enum.map(open, & &1.title) == ["Pending"]
+
+      assert {:ok, completed} = Todos.list_todos(manager, status: :completed)
+      assert Enum.map(completed, & &1.title) == ["Complete"]
+
+      assert {:ok, escalated_list} = Todos.list_todos(manager, status: :escalated)
+      assert Enum.map(escalated_list, & &1.id) == [escalated.id]
+      assert Todo.display_status(hd(escalated_list)) == :escalated
+
+      assert {:ok, canceled_list} = Todos.list_todos(manager, status: :canceled)
+      assert Enum.map(canceled_list, & &1.id) == [canceled.id]
+      assert Todo.display_status(hd(canceled_list)) == :canceled
+
+      assert {:ok, all} = Todos.list_todos(manager, status: :all)
+      assert length(all) == 4
       refute Todo.completed?(pending)
       assert Todo.completed?(done)
     end
@@ -99,8 +130,23 @@ defmodule Argus.TodosTest do
     end
   end
 
+  describe "completed todo restrictions" do
+    test "rejects edit, delete, and cancel on completed todos" do
+      scope = entity_scope_fixture()
+      {:ok, todo} = Todos.create_todo(scope, %{title: "Done item"})
+      {:ok, completed} = Todos.toggle_complete(scope, todo)
+
+      assert :not_found = Todos.update_todo(scope, completed, %{title: "Changed"})
+      assert {:error, :not_deletable} = Todos.delete_todo(scope, completed)
+      assert {:error, :not_cancelable} = Todos.cancel_todo(scope, completed, "Too late")
+
+      assert {:ok, reopened} = Todos.toggle_complete(scope, completed)
+      assert {:ok, _} = Todos.update_todo(scope, reopened, %{title: "Changed"})
+    end
+  end
+
   describe "delete_todo/2" do
-    test "soft-deletes todo, keeps audit linked, and shows delete in entity activity" do
+    test "soft-deletes todo within 48 hours" do
       scope = entity_scope_fixture()
       {:ok, todo} = Todos.create_todo(scope, %{title: "Scratch item"})
       assert {:ok, deleted} = Todos.delete_todo(scope, todo)
@@ -115,6 +161,94 @@ defmodule Argus.TodosTest do
 
       assert {:ok, activity} = Todos.list_entity_audit_logs(scope)
       assert Enum.any?(activity, &(&1.action == "deleted" && &1.todo_id == deleted.id))
+    end
+
+    test "rejects delete after 48 hours" do
+      scope = entity_scope_fixture()
+      {:ok, todo} = Todos.create_todo(scope, %{title: "Old item"})
+      todo = backdate_todo!(todo, 49)
+
+      assert {:error, :delete_window_expired} = Todos.delete_todo(scope, todo)
+      assert {:ok, [listed]} = Todos.list_todos(scope)
+      assert listed.id == todo.id
+    end
+  end
+
+  describe "cancel_todo/3" do
+    test "cancels todo after 48 hours with required note" do
+      scope = entity_scope_fixture()
+      {:ok, todo} = Todos.create_todo(scope, %{title: "Stale task"})
+      todo = backdate_todo!(todo, 49)
+
+      assert {:ok, canceled} = Todos.cancel_todo(scope, todo, "No longer needed")
+      assert %DateTime{} = canceled.canceled_at
+      assert canceled.canceled_by_id == scope.user.id
+      assert {:ok, []} = Todos.list_todos(scope, status: :open)
+      assert {:ok, [listed]} = Todos.list_todos(scope, status: :canceled)
+      assert listed.id == canceled.id
+
+      audit = Enum.find(Todos.list_audit_logs(canceled), &(&1.action == "canceled"))
+      assert audit.new_value == "No longer needed"
+    end
+
+    test "rejects cancel within 48 hours" do
+      scope = entity_scope_fixture()
+      {:ok, todo} = Todos.create_todo(scope, %{title: "Fresh task"})
+
+      assert {:error, :not_cancelable} = Todos.cancel_todo(scope, todo, "Too soon")
+    end
+
+    test "rejects blank cancel note" do
+      scope = entity_scope_fixture()
+      {:ok, todo} = Todos.create_todo(scope, %{title: "Stale task"})
+      todo = backdate_todo!(todo, 49)
+
+      assert {:error, :note_required} = Todos.cancel_todo(scope, todo, "")
+    end
+  end
+
+  describe "record_escalation/3" do
+    test "links todo to obligation and keeps it visible as escalated" do
+      manager = manager_scope_fixture()
+      type = type_fixture(manager.entity)
+      {:ok, todo} = Todos.create_todo(manager, %{title: "Needs formal duty"})
+
+      assert {:ok, obligation} =
+               Argus.Obligations.create_obligation(manager, %{
+                 title: "Needs formal duty",
+                 obligation_type_id: type.id,
+                 due_by: ~D[2026-07-01],
+                 open_note: "Escalated from todo"
+               })
+
+      assert {:ok, escalated} = Todos.record_escalation(manager, todo, obligation)
+      assert escalated.escalated_obligation_id == obligation.id
+      assert %DateTime{} = escalated.escalated_at
+      assert {:ok, []} = Todos.list_todos(manager, status: :open)
+      assert {:ok, [listed]} = Todos.list_todos(manager, status: :escalated)
+      assert listed.id == escalated.id
+      assert Todo.display_status(listed) == :escalated
+
+      audit = Enum.find(Todos.list_audit_logs(escalated), &(&1.action == "escalated"))
+      assert audit.new_value == obligation.id
+    end
+
+    test "rejects escalation of completed todo" do
+      manager = manager_scope_fixture()
+      type = type_fixture(manager.entity)
+      {:ok, todo} = Todos.create_todo(manager, %{title: "Done task"})
+      {:ok, completed} = Todos.toggle_complete(manager, todo)
+
+      assert {:ok, obligation} =
+               Argus.Obligations.create_obligation(manager, %{
+                 title: "Done task",
+                 obligation_type_id: type.id,
+                 due_by: ~D[2026-07-01],
+                 open_note: "Escalated"
+               })
+
+      assert :not_found = Todos.get_todo_for_escalation(manager, completed.id)
+      assert :not_found = Todos.record_escalation(manager, completed, obligation)
     end
   end
 
@@ -138,9 +272,68 @@ defmodule Argus.TodosTest do
         assert "updated" in actions
         assert "completed" in actions
 
+        assert {:ok, todo} = Todos.toggle_complete(creator, todo)
         assert {:ok, _} = Todos.delete_todo(creator, todo)
         assert {:ok, []} = Todos.list_todos(teammate)
       end
     end
+  end
+
+  describe "list_todos_page/2" do
+    test "keyset-paginates open todos newest first" do
+      scope = entity_scope_fixture()
+
+      for i <- 1..30 do
+        {:ok, todo} =
+          Todos.create_todo(scope, %{
+            title: "Todo #{String.pad_leading(Integer.to_string(i), 2, "0")}"
+          })
+
+        _ = stagger_todo!(todo, 30 - i)
+      end
+
+      assert {:ok, page1} = Todos.list_todos_page(scope, status: :open, limit: 25)
+      assert length(page1.rows) == 25
+      assert hd(page1.rows).title == "Todo 30"
+      refute page1.end?
+
+      assert {:ok, page2} =
+               Todos.list_todos_page(scope,
+                 status: :open,
+                 limit: 25,
+                 cursor: page1.cursor
+               )
+
+      assert length(page2.rows) == 5
+      assert List.last(page2.rows).title == "Todo 01"
+      assert page2.end?
+    end
+
+    test "limit: :all returns everything with end? true" do
+      scope = entity_scope_fixture()
+      {:ok, _} = Todos.create_todo(scope, %{title: "One"})
+      {:ok, _} = Todos.create_todo(scope, %{title: "Two"})
+
+      assert {:ok, page} = Todos.list_todos_page(scope, status: :open, limit: :all)
+      assert length(page.rows) == 2
+      assert page.end?
+      assert page.cursor == nil
+    end
+  end
+
+  defp backdate_todo!(%Todo{} = todo, hours_ago) do
+    old = DateTime.add(DateTime.utc_now(:second), -hours_ago * 3600, :second)
+
+    todo
+    |> Ecto.Changeset.change(inserted_at: old)
+    |> Repo.update!()
+  end
+
+  defp stagger_todo!(%Todo{} = todo, seconds_ago) do
+    old = DateTime.add(DateTime.utc_now(:second), -seconds_ago, :second)
+
+    todo
+    |> Ecto.Changeset.change(inserted_at: old)
+    |> Repo.update!()
   end
 end

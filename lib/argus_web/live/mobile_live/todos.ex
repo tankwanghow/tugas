@@ -2,7 +2,7 @@ defmodule ArgusWeb.MobileLive.Todos do
   use ArgusWeb, :live_view
 
   alias ArgusWeb.ModalEscape
-  alias ArgusWeb.TodoLive.IndexHelpers
+  alias ArgusWeb.TodoLive.{ActivityFormat, IndexHelpers}
   alias Argus.Todos.Todo
 
   @impl true
@@ -15,36 +15,43 @@ defmodule ArgusWeb.MobileLive.Todos do
     >
       <div id="m-todos-page" class="p-4">
         <div class="flex items-center justify-between gap-2 mb-3">
-          <div class="font-semibold text-xl">Todos</div>
-          <button
-            id="m-new-todo-btn"
-            type="button"
-            phx-click="new"
-            class="btn btn-primary btn-sm gap-1"
-          >
-            <.icon name="hero-plus-mini" class="size-4" /> New
-          </button>
+          <div class="font-semibold text-xl">
+            Todos - <span class="text-base-content/50">{@current_scope.entity.slug}</span>
+          </div>
+
+          <form id="m-todo-status-filter" phx-change="set_status">
+            <select id="m-todo-status-select" name="status" class="select select-sm w-auto">
+              <option
+                :for={{value, label} <- IndexHelpers.statuses()}
+                value={value}
+                selected={@status == IndexHelpers.parse_status(value)}
+              >
+                {label}
+              </option>
+            </select>
+          </form>
         </div>
-
-        <p class="text-xs text-base-content/60 mb-3">
-          Quick team tasks — separate from duties.
-        </p>
-
         <ul
-          :if={@todos != []}
           id="m-todos-list"
           class="divide-y divide-base-300 rounded-box border border-base-300"
+          phx-update="stream"
+          phx-viewport-bottom={!@end? && "load_more"}
         >
           <li
-            :for={todo <- @todos}
-            id={"m-todo-#{todo.id}"}
+            :for={{_dom_id, todo} <- @streams.todos}
+            id={IndexHelpers.todo_dom_id(@socket, todo)}
+            phx-hook="TodoRowEffect"
+            data-todo-id={todo.id}
+            data-effect={IndexHelpers.row_effect_name(@row_effects, todo.id)}
             class={[
-              "p-3 space-y-2",
-              Todo.completed?(todo) && "opacity-60"
+              "p-2 border-l-4 border-transparent",
+              IndexHelpers.row_muted?(todo) && "opacity-60",
+              IndexHelpers.row_effect_class(@row_effects, todo.id)
             ]}
           >
-            <div class="flex items-start gap-3">
+            <div class="flex items-start gap-2">
               <input
+                :if={Todo.active?(todo)}
                 id={"m-todo-complete-#{todo.id}"}
                 type="checkbox"
                 class="checkbox checkbox-sm mt-1"
@@ -52,36 +59,29 @@ defmodule ArgusWeb.MobileLive.Todos do
                 phx-click="toggle_complete"
                 phx-value-id={todo.id}
               />
-              <div class="flex-1 min-w-0">
-                <div class={[
-                  "font-medium",
-                  Todo.completed?(todo) && "line-through text-base-content/60"
-                ]}>
-                  {todo.title}
+              <div :if={not Todo.active?(todo)} class="w-4 shrink-0" aria-hidden="true" />
+              <div class="flex-1 min-w-0 space-y-1">
+                <div class="flex flex-wrap items-center">
+                  <div class={[
+                    "font-medium",
+                    IndexHelpers.title_strike?(todo) && "line-through text-base-content/60"
+                  ]}>
+                    {todo.title}
+                  </div>
+                  <.todo_badge todo={todo} />
                 </div>
-                <div class="text-xs text-base-content/50 mt-0.5">
-                  {display_name(todo.created_by)}
-                </div>
-              </div>
-              <div class="flex shrink-0 gap-1">
-                <button
-                  type="button"
-                  phx-click="edit"
-                  phx-value-id={todo.id}
-                  class="btn btn-ghost btn-xs"
+                <.link
+                  :if={Todo.escalated?(todo) && todo.escalated_obligation_id}
+                  id={"m-todo-view-duty-#{todo.id}"}
+                  navigate={
+                    ~p"/m/#{@current_scope.entity.slug}/obligations/#{todo.escalated_obligation_id}"
+                  }
+                  class="text-xs link link-primary"
                 >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  phx-click="delete"
-                  phx-value-id={todo.id}
-                  data-confirm="Delete this todo?"
-                  class="btn btn-ghost btn-xs text-error"
-                >
-                  Delete
-                </button>
+                  View duty
+                </.link>
               </div>
+              <.todo_actions_menu todo={todo} current_scope={@current_scope} mobile?={true} />
             </div>
             <.audit_trail
               todo={todo}
@@ -90,11 +90,9 @@ defmodule ArgusWeb.MobileLive.Todos do
             />
           </li>
         </ul>
-        <p :if={@todos == []} id="m-todos-empty" class="text-sm text-base-content/60">
-          No todos yet. Add one to get started.
+        <p :if={@empty?} id="m-todos-empty" class="text-sm text-base-content/60">
+          {IndexHelpers.empty_message(@status)}
         </p>
-
-        <.team_activity :if={@entity_activity != []} logs={@entity_activity} />
       </div>
 
       <div :if={@todo_form} id="m-todo-modal" class="modal modal-bottom modal-open">
@@ -109,7 +107,7 @@ defmodule ArgusWeb.MobileLive.Todos do
           >
             <.input field={@todo_form[:title]} type="text" label="Title" required />
             <div class="flex gap-2 pt-2">
-              <button type="button" class="btn flex-1" phx-click="cancel">Cancel</button>
+              <button type="button" class="btn flex-1" phx-click="dismiss_form">Cancel</button>
               <.button class="btn btn-primary flex-1" phx-disable-with="Saving…">
                 {@submit_label}
               </.button>
@@ -117,25 +115,36 @@ defmodule ArgusWeb.MobileLive.Todos do
           </.form>
         </div>
         <div class="modal-backdrop">
-          <button type="button" phx-click="cancel">close</button>
+          <button type="button" phx-click="dismiss_form">close</button>
+        </div>
+      </div>
+
+      <div :if={@canceling_todo} id="m-todo-cancel-modal" class="modal modal-bottom modal-open">
+        <div class="modal-box">
+          <h3 class="font-bold text-lg">Cancel todo</h3>
+          <p class="text-sm text-base-content/70 mt-1">
+            Todos older than 48 hours cannot be deleted. Add a note to cancel <span class="font-medium">{@canceling_todo.title}</span>.
+          </p>
+          <.form
+            for={@cancel_form}
+            id="m-todo-cancel-form"
+            phx-submit="submit_cancel"
+            class="mt-4 space-y-3"
+          >
+            <.input field={@cancel_form[:note]} type="textarea" label="Cancel note" required />
+            <div class="flex gap-2 pt-2">
+              <button type="button" class="btn flex-1" phx-click="dismiss_cancel">Back</button>
+              <.button class="btn btn-error flex-1" phx-disable-with="Canceling…">
+                Cancel todo
+              </.button>
+            </div>
+          </.form>
+        </div>
+        <div class="modal-backdrop">
+          <button type="button" phx-click="dismiss_cancel">close</button>
         </div>
       </div>
     </Layouts.mobile_app>
-    """
-  end
-
-  attr :logs, :list, required: true
-
-  defp team_activity(assigns) do
-    ~H"""
-    <div id="m-team-activity" class="mt-6">
-      <h3 class="text-sm font-semibold text-base-content/70">Team activity</h3>
-      <ul class="mt-2 space-y-1 text-xs text-base-content/60">
-        <li :for={log <- @logs}>
-          {audit_action_label(log.action)}{activity_subject(log)} · {display_name(log.user)}
-        </li>
-      </ul>
-    </div>
     """
   end
 
@@ -160,7 +169,7 @@ defmodule ArgusWeb.MobileLive.Todos do
         class="mt-1 space-y-1 text-xs text-base-content/60"
       >
         <li :for={log <- @logs}>
-          {audit_action_label(log.action)} · {display_name(log.user)}
+          {ActivityFormat.audit_action_label(log.action)} · {ActivityFormat.display_name(log.user)}
         </li>
       </ul>
     </div>
@@ -201,7 +210,7 @@ defmodule ArgusWeb.MobileLive.Todos do
     {:noreply, ModalEscape.close_todo_modal(socket)}
   end
 
-  def handle_event("cancel", _params, socket) do
+  def handle_event("dismiss_form", _params, socket) do
     {:noreply, socket |> IndexHelpers.close_modal() |> leave_new_todo_route()}
   end
 
@@ -224,6 +233,30 @@ defmodule ArgusWeb.MobileLive.Todos do
     IndexHelpers.handle_delete(socket, params) |> IndexHelpers.handle_result()
   end
 
+  def handle_event("open_cancel", params, socket) do
+    IndexHelpers.handle_open_cancel(socket, params) |> IndexHelpers.handle_result()
+  end
+
+  def handle_event("submit_cancel", params, socket) do
+    IndexHelpers.handle_submit_cancel(socket, params) |> IndexHelpers.handle_result()
+  end
+
+  def handle_event("dismiss_cancel", _params, socket) do
+    {:noreply, IndexHelpers.close_cancel_modal(socket)}
+  end
+
+  def handle_event("set_status", params, socket) do
+    IndexHelpers.handle_set_status(socket, params) |> IndexHelpers.handle_result()
+  end
+
+  def handle_event("todo_action", params, socket) do
+    IndexHelpers.handle_todo_action(socket, params) |> IndexHelpers.handle_result()
+  end
+
+  def handle_event("finish_row_effect", params, socket) do
+    IndexHelpers.handle_finish_row_effect(socket, params) |> IndexHelpers.handle_result()
+  end
+
   def handle_event("toggle_audit", %{"id" => id}, socket) do
     expanded =
       if socket.assigns.expanded_audit_id == id, do: nil, else: id
@@ -231,22 +264,9 @@ defmodule ArgusWeb.MobileLive.Todos do
     {:noreply, assign(socket, :expanded_audit_id, expanded)}
   end
 
-  defp display_name(%{username: u}) when is_binary(u) and u != "", do: u
-  defp display_name(%{email: e}) when is_binary(e), do: e
-  defp display_name(_), do: "Unknown"
-
-  defp audit_action_label("created"), do: "Created"
-  defp audit_action_label("updated"), do: "Updated"
-  defp audit_action_label("completed"), do: "Done"
-  defp audit_action_label("reopened"), do: "Reopened"
-  defp audit_action_label("deleted"), do: "Deleted"
-  defp audit_action_label(other), do: other
-
-  defp activity_subject(%{action: "deleted", old_value: title}) when is_binary(title),
-    do: " \"#{title}\""
-
-  defp activity_subject(%{todo: %{title: title}}) when is_binary(title), do: " \"#{title}\""
-  defp activity_subject(_), do: ""
+  def handle_event("load_more", _params, socket) do
+    IndexHelpers.handle_load_more(socket) |> IndexHelpers.handle_result()
+  end
 
   defp leave_new_todo_route(socket) do
     if socket.assigns.live_action == :new do
