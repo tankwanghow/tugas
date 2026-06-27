@@ -421,6 +421,17 @@ defmodule Argus.AccountsTest do
     end
   end
 
+  describe "User.display_name/1" do
+    test "uses the username when present" do
+      assert User.display_name(%User{username: "handle", email: "a@b.com"}) == "handle"
+    end
+
+    test "falls back to email when username is blank or nil" do
+      assert User.display_name(%User{username: nil, email: "a@b.com"}) == "a@b.com"
+      assert User.display_name(%User{username: "", email: "a@b.com"}) == "a@b.com"
+    end
+  end
+
   describe "change_user_username/3 and update_user_username/2" do
     test "change_user_username/3 returns a changeset" do
       assert %Ecto.Changeset{} = Accounts.change_user_username(user_fixture())

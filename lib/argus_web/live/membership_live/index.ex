@@ -27,10 +27,12 @@ defmodule ArgusWeb.MembershipLive.Index do
               class={["flex items-center gap-3 p-3", membership.disabled_at && "opacity-60"]}
             >
               <div class="flex-1 min-w-0">
-                <span :if={user.email} class="font-medium truncate">
-                  {user.email}
-                  <span :if={user.username} class="mx-4">♦</span>
-                  <span :if={user.username} class="text-base-content/70 truncate">{user.username}</span>
+                <span class="font-medium truncate">
+                  {user_label(user)}
+                  <span :if={user.username && user.email} class="mx-4">♦</span>
+                  <span :if={user.username && user.email} class="text-base-content/70 truncate">
+                    {user.email}
+                  </span>
                   <span :if={user.id == @current_scope.user.id} class="mx-4">♦</span>
                   <span :if={user.id == @current_scope.user.id} class="text-base-content/40">you</span>
                 </span>
@@ -175,7 +177,7 @@ defmodule ArgusWeb.MembershipLive.Index do
 
         <div :if={@disabling} id="disable-member-modal" class="modal modal-open">
           <div class="modal-box">
-            <h3 class="text-lg font-semibold">Disable {@disabling.user.email}?</h3>
+            <h3 class="text-lg font-semibold">Disable {user_label(@disabling.user)}?</h3>
             <p class="mt-2 text-sm text-base-content/70">
               They will lose access to {@current_scope.entity.name} and stop using a seat. You can re-enable them later.
             </p>

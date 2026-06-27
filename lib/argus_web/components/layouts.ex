@@ -462,7 +462,7 @@ defmodule ArgusWeb.Layouts do
           <div class="w-10 h-1 rounded-full bg-base-300"></div>
         </div>
         <div :if={@current_scope && @current_scope.user} class="px-4 py-2 border-b border-base-200">
-          <div class="text-sm font-semibold">{@current_scope.user.email}</div>
+          <div class="text-sm font-semibold">{user_label(@current_scope.user)}</div>
           <div :if={@current_scope.entity} class="text-xs text-base-content/60">
             {@current_scope.entity.name} <span class="font-mono">({@current_scope.entity.slug})</span>
           </div>

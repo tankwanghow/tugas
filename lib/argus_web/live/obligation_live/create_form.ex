@@ -130,7 +130,7 @@ defmodule ArgusWeb.ObligationLive.CreateForm do
 
   defp member_options(scope) do
     Entities.list_entity_members(scope.entity)
-    |> Enum.map(fn {user, _membership} -> {user.email, user.id} end)
+    |> Enum.map(fn {user, _membership} -> {Argus.Accounts.User.display_name(user), user.id} end)
   end
 
   defp map_create_params(params) do

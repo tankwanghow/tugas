@@ -42,6 +42,17 @@ defmodule ArgusWeb.MembershipLiveTest do
     assert Entities.get_membership!(member, admin.entity).role == "manager"
   end
 
+  test "shows a member's username instead of email when set", %{conn: conn} do
+    admin = Argus.EntitiesFixtures.entity_scope_fixture()
+    conn = log_in_user(conn, admin.user)
+    member = member_fixture(admin.entity)
+    {:ok, _} = Argus.Accounts.update_user_username(member, %{"username" => "handle9"})
+
+    {:ok, view, _html} = live(conn, ~p"/entities/#{admin.entity.slug}/members")
+
+    assert has_element?(view, "#members-list", "handle9")
+  end
+
   test "admin disables a member through the confirm modal", %{conn: conn} do
     admin = Argus.EntitiesFixtures.entity_scope_fixture()
     conn = log_in_user(conn, admin.user)

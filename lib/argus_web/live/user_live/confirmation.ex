@@ -10,7 +10,7 @@ defmodule ArgusWeb.UserLive.Confirmation do
       <div class="w-full max-w-sm card bg-base-100 shadow">
         <div class="card-body gap-4">
           <div class="text-center">
-            <h1 class="text-lg font-semibold">Welcome {@user.email}</h1>
+            <h1 class="text-lg font-semibold">Welcome {user_label(@user)}</h1>
           </div>
 
           <.form

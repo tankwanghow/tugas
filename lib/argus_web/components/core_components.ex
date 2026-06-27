@@ -577,6 +577,13 @@ defmodule ArgusWeb.CoreComponents do
   end
 
   @doc """
+  How a user is represented in the UI — their username when set, else email.
+  Delegates to `Argus.Accounts.User.display_name/1`; use this in any template
+  that would otherwise render a user's raw email.
+  """
+  def user_label(%Argus.Accounts.User{} = user), do: Argus.Accounts.User.display_name(user)
+
+  @doc """
   Formats a `Date` (a plain calendar date — no time zone) for display, e.g. `15 Jan 2026`.
 
   `due_by` and other bare dates carry no instant, so they are never shifted; only stored

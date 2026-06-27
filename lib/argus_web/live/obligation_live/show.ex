@@ -51,7 +51,7 @@ defmodule ArgusWeb.ObligationLive.Show do
                 class="badge badge-sm badge-primary badge-soft gap-1"
               >
                 <.icon name="hero-user-mini" class="size-3" />
-                {@obligation.primary_assignee.email}
+                {user_label(@obligation.primary_assignee)}
                 <span class="text-[0.65rem] font-semibold uppercase tracking-wide opacity-70">
                   Primary
                 </span>
@@ -68,7 +68,7 @@ defmodule ArgusWeb.ObligationLive.Show do
                   class="badge badge-sm badge-primary badge-soft gap-1 cursor-pointer"
                 >
                   <.icon name="hero-user-mini" class="size-3" />
-                  {@obligation.primary_assignee.email}
+                  {user_label(@obligation.primary_assignee)}
                   <span class="text-[0.65rem] font-semibold uppercase tracking-wide opacity-70">
                     Primary
                   </span>
@@ -82,7 +82,7 @@ defmodule ArgusWeb.ObligationLive.Show do
                   <li :for={c <- other_collaborators(@obligation)}>
                     <span class="flex items-center gap-1">
                       <.icon name="hero-user-group-mini" class="size-3" />
-                      {c.user.email}
+                      {user_label(c.user)}
                     </span>
                   </li>
                 </ul>
@@ -274,7 +274,7 @@ defmodule ArgusWeb.ObligationLive.Show do
                   @current_scope.entity.timezone
                 )}</span>
                 <span :if={event.status_by} class="text-xs text-base-content/80">
-                  {event.status_by.email}
+                  {user_label(event.status_by)}
                 </span>
                 <button
                   id={"step-files-btn-#{event.id}"}
@@ -362,7 +362,7 @@ defmodule ArgusWeb.ObligationLive.Show do
                     @current_scope.entity.timezone
                   )}</span>
                 </div>
-                <div class="text-xs text-base-content/50">by {log.user.email}</div>
+                <div class="text-xs text-base-content/50">by {user_label(log.user)}</div>
                 <div class="text-base-content/70">
                   <span :if={log.old_value} class="line-through">{log.old_value}</span>
                   <span :if={log.old_value != nil and log.new_value != nil}> → </span>
@@ -1050,7 +1050,7 @@ defmodule ArgusWeb.ObligationLive.Show do
 
   defp member_options(scope) do
     Entities.list_entity_members(scope.entity)
-    |> Enum.map(fn {user, _membership} -> {user.email, user.id} end)
+    |> Enum.map(fn {user, _membership} -> {Argus.Accounts.User.display_name(user), user.id} end)
   end
 
   defp assign_edit_form(socket, obligation) do

@@ -380,6 +380,7 @@ Oban reminder jobs, REST API/mobile, billing beyond `plan`/`seat_limit` fields.
   render datetimes (`cycle_badge`, `todo_team_activity`, document rows, mobile cards, dashboard
   rows) take a `timezone` attr threaded from the caller's scope. This pairs with the render-time
   `Urgency.today_for(entity.timezone)` rule above.
+- **User display = username-first.** A user is represented in the UI by their **username when set, else email** — the single source of truth is `Argus.Accounts.User.display_name/1`, exposed to templates as `ArgusWeb.CoreComponents.user_label/1` (`user_label(user)`). **Never render a user's raw `user.email`** as their representation (assignee/actor/collaborator/audit-actor/navbar/select-option labels all go through `user_label`); the members list is the one place that additionally shows the email as muted secondary text. `EventMeta` (bare `Phoenix.Component`) imports `user_label/1` explicitly. The Todos `ActivityFormat.display_name/1` independently implements the same username-first rule.
 - **Context modules own domain logic.** LiveViews call `Argus.Obligations`, `Argus.Entities`, `Argus.Accounts` — not Repo directly.
 - **Multi-step writes use `Ecto.Multi`/transactions** (create obligation + open event; Done + spawn next; skip + event).
 - File uploads (v1) go to the local filesystem under a **configurable** `:uploads_dir`

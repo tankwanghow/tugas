@@ -31,13 +31,13 @@ defmodule ArgusWeb.MobileLive.Members do
             >
               <div class="flex flex-wrap items-center gap-2 min-w-0">
                 <div class="font-medium truncate">
-                  {user.email}
+                  {user_label(user)}
                   <span :if={membership.disabled_at} class="badge badge-ghost badge-sm ml-1">
                     disabled
                   </span>
                 </div>
-                <div :if={user.username} class="text-sm text-base-content/60 truncate">
-                  {user.username}
+                <div :if={user.username && user.email} class="text-sm text-base-content/60 truncate">
+                  {user.email}
                 </div>
                 <div
                   :if={is_nil(membership.disabled_at) and IndexHelpers.assignment_total(counts) > 0}
@@ -165,7 +165,7 @@ defmodule ArgusWeb.MobileLive.Members do
 
         <div :if={@disabling} id="m-disable-member-modal" class="modal modal-open">
           <div class="modal-box">
-            <h3 class="text-lg font-semibold">Disable {@disabling.user.email}?</h3>
+            <h3 class="text-lg font-semibold">Disable {user_label(@disabling.user)}?</h3>
             <p class="mt-2 text-sm text-base-content/70">
               They lose access to {@current_scope.entity.name} and stop using a seat. You can re-enable them later.
             </p>

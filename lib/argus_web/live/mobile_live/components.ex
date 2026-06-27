@@ -72,7 +72,7 @@ defmodule ArgusWeb.MobileLive.Components do
 
   defp assignee_label(assigns) do
     ~H"""
-    <div class="text-primary">{assigns.email}</div>
+    <div class="text-primary">{user_label(assigns)}</div>
     """
   end
 end

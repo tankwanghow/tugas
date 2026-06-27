@@ -6,6 +6,8 @@ defmodule ArgusWeb.EventMeta do
   """
   use Phoenix.Component
 
+  import ArgusWeb.CoreComponents, only: [user_label: 1]
+
   attr :event, :map, required: true
   attr :event_count, :integer, required: true
   attr :show_actor, :boolean, default: true
@@ -19,7 +21,7 @@ defmodule ArgusWeb.EventMeta do
       >
         {humanize_status(@event.status)}
       </span>
-      <span :if={@show_actor and @event.status_by}>by {@event.status_by.email}</span>
+      <span :if={@show_actor and @event.status_by}>by {user_label(@event.status_by)}</span>
       <span :if={@event.note} class="truncate max-w-[15rem] italic text-base-content/100">
         “{truncate_note(@event.note)}”
       </span>

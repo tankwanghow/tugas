@@ -15,6 +15,18 @@ defmodule Argus.Accounts.User do
   end
 
   @doc """
+  How a user is represented in the UI: their `username` when set, otherwise
+  their `email`. Single source of truth for user display across all LiveViews
+  (via `ArgusWeb.CoreComponents.user_label/1`).
+  """
+  def display_name(%__MODULE__{username: username, email: email}) do
+    case username do
+      u when is_binary(u) and u != "" -> u
+      _ -> email
+    end
+  end
+
+  @doc """
   A user changeset for registering or changing the email.
 
   It requires the email to change otherwise an error is added.

@@ -61,7 +61,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
                 class="badge badge-sm badge-primary badge-soft gap-1 max-w-full"
               >
                 <.icon name="hero-user-mini" class="size-3 shrink-0" />
-                <span class="truncate">{@obligation.primary_assignee.email}</span>
+                <span class="truncate">{user_label(@obligation.primary_assignee)}</span>
                 <span class="text-[0.65rem] font-semibold uppercase tracking-wide opacity-70 shrink-0">
                   Primary
                 </span>
@@ -78,7 +78,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
                   class="badge badge-sm badge-primary badge-soft gap-1 cursor-pointer max-w-full"
                 >
                   <.icon name="hero-user-mini" class="size-3 shrink-0" />
-                  <span class="truncate">{@obligation.primary_assignee.email}</span>
+                  <span class="truncate">{user_label(@obligation.primary_assignee)}</span>
                   <span class="text-[0.65rem] font-semibold uppercase tracking-wide opacity-70 shrink-0">
                     Primary
                   </span>
@@ -92,7 +92,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
                   <li :for={c <- other_collaborators(@obligation)}>
                     <span class="flex items-center gap-1">
                       <.icon name="hero-user-group-mini" class="size-3" />
-                      {c.user.email}
+                      {user_label(c.user)}
                     </span>
                   </li>
                 </ul>
@@ -276,7 +276,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
                   :short
                 )}</span>
                 <span :if={event.status_by} class="text-xs text-base-content/80">
-                  {event.status_by.email}
+                  {user_label(event.status_by)}
                 </span>
                 <button
                   id={"m-step-files-btn-#{event.id}"}
@@ -342,7 +342,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
                     @current_scope.entity.timezone
                   )}</span>
                 </div>
-                <div class="text-xs text-base-content/50">by {log.user.email}</div>
+                <div class="text-xs text-base-content/50">by {user_label(log.user)}</div>
                 <div class="text-base-content/70 break-words">
                   <span :if={log.old_value} class="line-through">{log.old_value}</span>
                   <span :if={log.old_value != nil and log.new_value != nil}> → </span>
@@ -1113,7 +1113,7 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
 
   defp member_options(scope) do
     Entities.list_entity_members(scope.entity)
-    |> Enum.map(fn {user, _membership} -> {user.email, user.id} end)
+    |> Enum.map(fn {user, _membership} -> {Argus.Accounts.User.display_name(user), user.id} end)
   end
 
   defp iso_date(%Date{} = date), do: Date.to_iso8601(date)
