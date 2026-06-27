@@ -480,11 +480,24 @@ defmodule ArgusWeb.Layouts do
               Argus.Authorization.can?(@current_scope, :manage_entity)
           }>
             <.link
+              id="m-more-members-link"
+              navigate={~p"/m/#{@current_scope.entity.slug}/members"}
+              class="flex items-center gap-3 px-4 py-4 active:bg-base-200"
+            >
+              <.icon name="hero-users" class="size-5 text-base-content/60" />
+              <span>Members</span>
+            </.link>
+          </li>
+          <li :if={
+            @current_scope && @current_scope.entity &&
+              Argus.Authorization.can?(@current_scope, :manage_entity)
+          }>
+            <.link
               navigate={~p"/m/#{@current_scope.entity.slug}/invite-session/member"}
               class="flex items-center gap-3 px-4 py-4 active:bg-base-200"
             >
               <.icon name="hero-user-plus" class="size-5 text-base-content/60" />
-              <span>Invite members</span>
+              <span>Invite session</span>
             </.link>
           </li>
           <li :if={

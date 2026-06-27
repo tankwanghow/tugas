@@ -470,17 +470,15 @@ defmodule ArgusWeb.ObligationLive.Show do
             This keeps the completed cycle for audit and creates a fresh one-off replacement
             to redo the work. A recurring series is not affected.
           </p>
-          <.form for={%{}} id="correct-form" phx-submit="confirm_correct" class="mt-4 space-y-3">
+          <.form
+            for={@correct_form}
+            id="correct-form"
+            phx-submit="confirm_correct"
+            class="mt-4 space-y-3"
+          >
+            <.input field={@correct_form[:reason]} type="textarea" label="Reason (required)" required />
             <.input
-              name="correct[reason]"
-              value=""
-              type="textarea"
-              label="Reason (required)"
-              required
-            />
-            <.input
-              name="correct[replacement_due_by]"
-              value={@obligation.due_by && Date.to_iso8601(@obligation.due_by)}
+              field={@correct_form[:replacement_due_by]}
               type="date"
               label="Replacement due date"
             />
@@ -671,6 +669,7 @@ defmodule ArgusWeb.ObligationLive.Show do
      |> assign(:show_completion_modal, false)
      |> assign(:active_completion_slot, nil)
      |> assign(:show_correct_modal, false)
+     |> assign_correct_form(obligation)
      |> assign(:step_files_modal_event_id, nil)
      |> assign(:step_files_modal_event, nil)
      |> assign(:voiding_document_id, nil)
@@ -954,7 +953,10 @@ defmodule ArgusWeb.ObligationLive.Show do
   end
 
   def handle_event("open_correct_modal", _params, socket) do
-    {:noreply, assign(socket, :show_correct_modal, true)}
+    {:noreply,
+     socket
+     |> assign(:show_correct_modal, true)
+     |> assign_correct_form(socket.assigns.obligation)}
   end
 
   def handle_event("close_correct_modal", _params, socket) do
@@ -1128,6 +1130,20 @@ defmodule ArgusWeb.ObligationLive.Show do
 
   defp assign_end_series_form(socket) do
     assign(socket, :end_series_form, to_form(%{"note" => ""}, as: :end_series))
+  end
+
+  defp assign_correct_form(socket, %Obligation{} = obligation) do
+    assign(socket, :correct_form, correct_form(obligation))
+  end
+
+  defp correct_form(%Obligation{} = obligation) do
+    to_form(
+      %{
+        "reason" => "",
+        "replacement_due_by" => obligation.due_by && Date.to_iso8601(obligation.due_by)
+      },
+      as: "correct"
+    )
   end
 
   defp recurring?(obligation) do

@@ -7,6 +7,7 @@ defmodule Argus.Obligations do
 
   alias Argus.Accounts.{Scope, User}
   alias Argus.Authorization
+  alias Argus.Entities.Membership
 
   alias Argus.Obligations.{
     AuditLog,
@@ -30,22 +31,26 @@ defmodule Argus.Obligations do
 
   def list_my_work(scope), do: list_obligations(scope, status: :my_live)
 
-  def list_types(%Scope{entity: entity}) do
+  def list_types(%Scope{entity: %_{} = entity}) do
     Type
     |> where([t], t.entity_id == ^entity.id)
     |> order_by([t], asc: t.name)
     |> Repo.all()
   end
 
-  def get_type!(%Scope{entity: entity}, id) do
+  def list_types(_), do: :not_authorise
+
+  def get_type!(%Scope{entity: %_{} = entity}, id) do
     Type
     |> where([t], t.id == ^id and t.entity_id == ^entity.id)
     |> Repo.one!()
   end
 
+  def get_type!(_scope, _id), do: raise(Ecto.NoResultsError, queryable: Type)
+
   def change_type(%Type{} = type, attrs \\ %{}), do: Type.changeset(type, attrs)
 
-  def create_type(%Scope{entity: entity} = scope, attrs) do
+  def create_type(%Scope{entity: %_{} = entity} = scope, attrs) do
     if Authorization.can?(scope, :manage_types) do
       %Type{entity_id: entity.id}
       |> Type.changeset(attrs)
@@ -55,7 +60,9 @@ defmodule Argus.Obligations do
     end
   end
 
-  def update_type(%Scope{entity: entity} = scope, %Type{} = type, attrs) do
+  def create_type(_scope, _attrs), do: :not_authorise
+
+  def update_type(%Scope{entity: %_{} = entity} = scope, %Type{} = type, attrs) do
     if Authorization.can?(scope, :manage_types) and type.entity_id == entity.id do
       changeset = Type.changeset(type, attrs)
 
@@ -91,7 +98,9 @@ defmodule Argus.Obligations do
     end
   end
 
-  def get_obligation!(%Scope{entity: entity}, id) do
+  def update_type(_scope, _type, _attrs), do: :not_authorise
+
+  def get_obligation!(%Scope{entity: %_{} = entity}, id) do
     Obligation
     |> where([o], o.id == ^id and o.entity_id == ^entity.id)
     |> preload([
@@ -103,13 +112,15 @@ defmodule Argus.Obligations do
     |> Repo.one!()
   end
 
+  def get_obligation!(_scope, _id), do: raise(Ecto.NoResultsError, queryable: Obligation)
+
   def change_obligation(%Obligation{} = obligation, attrs \\ %{}) do
     Obligation.changeset(obligation, attrs)
   end
 
   def list_team_overview(scope), do: list_obligations(scope, status: :live)
 
-  def list_unassigned(%Scope{entity: entity}) do
+  def list_unassigned(%Scope{entity: %_{} = entity}) do
     Obligation
     |> where([o], o.entity_id == ^entity.id)
     |> live()
@@ -119,9 +130,13 @@ defmodule Argus.Obligations do
     |> Repo.all()
   end
 
+  def list_unassigned(_), do: :not_authorise
+
   @recently_completed_days 14
 
-  def list_recently_completed(%Scope{entity: entity}, days \\ @recently_completed_days) do
+  def list_recently_completed(scope, days \\ @recently_completed_days)
+
+  def list_recently_completed(%Scope{entity: %_{} = entity}, days) do
     cutoff = DateTime.utc_now(:second) |> DateTime.add(-days * 24 * 3600, :second)
 
     Obligation
@@ -131,6 +146,8 @@ defmodule Argus.Obligations do
     |> preload([:obligation_type, :primary_assignee])
     |> Repo.all()
   end
+
+  def list_recently_completed(_, _), do: :not_authorise
 
   @status_filters ~w(my_live my_completed my_skipped my_all live completed skipped all)a
 
@@ -142,7 +159,9 @@ defmodule Argus.Obligations do
       `:skipped`, or `:all`. My filters scope to primary assignee or collaborator.
     * `:query` — optional case-insensitive search on title, type name, assignee email
   """
-  def list_obligations(%Scope{entity: entity, user: user}, opts \\ []) do
+  def list_obligations(scope, opts \\ [])
+
+  def list_obligations(%Scope{entity: %_{} = entity, user: %_{} = user}, opts) do
     status = Keyword.get(opts, :status, :live)
     query = Keyword.get(opts, :query)
 
@@ -159,6 +178,8 @@ defmodule Argus.Obligations do
     |> Repo.all()
     |> filter_by_query(query)
   end
+
+  def list_obligations(_, _), do: :not_authorise
 
   defp scope_to_assignee(query, status, user)
        when status in [:my_live, :my_completed, :my_skipped, :my_all] do
@@ -220,7 +241,9 @@ defmodule Argus.Obligations do
 
   @page_size 25
 
-  def list_obligations_page(%Scope{entity: entity, user: user}, opts \\ []) do
+  def list_obligations_page(scope, opts \\ [])
+
+  def list_obligations_page(%Scope{entity: %_{} = entity, user: %_{} = user}, opts) do
     status = Keyword.get(opts, :status, :live)
     sort = normalize_page_sort(Keyword.get(opts, :sort, :due_asc))
     cursor = Pagination.decode(Keyword.get(opts, :cursor))
@@ -250,6 +273,8 @@ defmodule Argus.Obligations do
     |> Repo.all()
     |> paginate(sort, limit)
   end
+
+  def list_obligations_page(_, _), do: :not_authorise
 
   defp normalize_page_sort(sort) when sort in [:due_asc, :due_desc, :title, :recent, :someday],
     do: sort
@@ -462,10 +487,12 @@ defmodule Argus.Obligations do
     with true <- Authorization.can?(scope, :create_obligation),
          {:ok, type} <- fetch_type_for_entity(scope, attrs),
          :ok <- validate_open_note(attrs),
+         :ok <- validate_obligation_assignees(scope, attrs),
          {:ok, obligation} <- insert_obligation(scope, attrs, type) do
       {:ok, obligation}
     else
       false -> :not_authorise
+      {:error, :invalid_assignee} = error -> error
       {:error, _} = error -> error
     end
   end
@@ -511,9 +538,15 @@ defmodule Argus.Obligations do
          true <- can_add_document?(scope, obligation),
          :ok <- ensure_event_workable(event, obligation),
          :ok <- validate_document_slot(obligation, document_slot),
-         {:ok, file} <- store_upload(upload, obligation),
-         {:ok, document} <- insert_document(scope, event, file, document_slot) do
-      {:ok, document}
+         {:ok, file} <- store_upload(upload, obligation) do
+      case insert_document(scope, event, file, document_slot) do
+        {:ok, document} ->
+          {:ok, document}
+
+        {:error, _} = error ->
+          Uploads.delete(%{file: file})
+          error
+      end
     else
       :not_found -> :not_found
       false -> :not_authorise
@@ -536,9 +569,17 @@ defmodule Argus.Obligations do
       changeset = Obligation.changeset(obligation, attrs)
 
       cond do
-        not changeset.valid? -> {:error, changeset}
-        changeset.changes == %{} -> {:ok, obligation}
-        true -> apply_obligation_update(scope, obligation, changeset)
+        not changeset.valid? ->
+          {:error, changeset}
+
+        changeset.changes == %{} ->
+          {:ok, obligation}
+
+        true ->
+          case validate_assignee_change(scope, changeset) do
+            :ok -> apply_obligation_update(scope, obligation, changeset)
+            {:error, :invalid_assignee} = error -> error
+          end
       end
     else
       :not_found -> :not_found
@@ -549,7 +590,8 @@ defmodule Argus.Obligations do
   def update_collaborators(%Scope{} = scope, %Obligation{} = obligation, user_ids) do
     with :ok <- ensure_obligation_entity(scope, obligation),
          true <- Authorization.can?(scope, :edit_obligation),
-         true <- live_cycle?(obligation) do
+         true <- live_cycle?(obligation),
+         :ok <- validate_entity_members(scope, user_ids) do
       current =
         Collaborator
         |> where([c], c.obligation_id == ^obligation.id)
@@ -610,6 +652,7 @@ defmodule Argus.Obligations do
     else
       :not_found -> :not_found
       false -> :not_authorise
+      {:error, :invalid_assignee} = error -> error
     end
   end
 
@@ -1218,8 +1261,20 @@ defmodule Argus.Obligations do
   end
 
   defp delete_document_row(%EventDocument{} = document) do
-    Uploads.delete(document)
-    Repo.delete(document)
+    Repo.transaction(fn ->
+      case Repo.delete(document) do
+        {:ok, deleted} ->
+          Uploads.delete(deleted)
+          deleted
+
+        {:error, changeset} ->
+          Repo.rollback(changeset)
+      end
+    end)
+    |> case do
+      {:ok, deleted} -> {:ok, deleted}
+      {:error, changeset} -> {:error, changeset}
+    end
   end
 
   defp store_upload(upload, obligation) do
@@ -1383,4 +1438,48 @@ defmodule Argus.Obligations do
 
   defp ensure_obligation_entity(%Scope{entity: %{id: id}}, %Obligation{entity_id: id}), do: :ok
   defp ensure_obligation_entity(_, _), do: :not_found
+
+  defp validate_obligation_assignees(scope, attrs) do
+    assignee = Map.get(attrs, :primary_assignee_id) || Map.get(attrs, "primary_assignee_id")
+    assignee = if assignee in [nil, ""], do: nil, else: assignee
+
+    collaborator_ids =
+      Map.get(attrs, :collaborator_ids, []) || Map.get(attrs, "collaborator_ids", [])
+
+    with :ok <- validate_entity_members(scope, List.wrap(assignee)),
+         :ok <- validate_entity_members(scope, collaborator_ids) do
+      :ok
+    end
+  end
+
+  defp validate_assignee_change(scope, changeset) do
+    case Map.get(changeset.changes, :primary_assignee_id) do
+      nil -> :ok
+      assignee_id -> validate_entity_members(scope, [assignee_id])
+    end
+  end
+
+  defp validate_entity_members(%Scope{entity: %{id: entity_id}}, user_ids) do
+    ids =
+      user_ids
+      |> List.wrap()
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    if ids == [] do
+      :ok
+    else
+      count =
+        Membership
+        |> where(
+          [m],
+          m.entity_id == ^entity_id and m.user_id in ^ids and not is_nil(m.accepted_at)
+        )
+        |> Repo.aggregate(:count)
+
+      if count == length(ids), do: :ok, else: {:error, :invalid_assignee}
+    end
+  end
+
+  defp validate_entity_members(_, _), do: {:error, :invalid_assignee}
 end

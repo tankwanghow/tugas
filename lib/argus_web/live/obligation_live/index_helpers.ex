@@ -80,9 +80,10 @@ defmodule ArgusWeb.ObligationLive.IndexHelpers do
   def load_rows(scope, today, mine?, lifecycle, query) do
     status = status_atom(mine?, lifecycle)
 
-    scope
-    |> Obligations.list_obligations(status: status, query: query)
-    |> build_rows(today)
+    case Obligations.list_obligations(scope, status: status, query: query) do
+      :not_authorise -> []
+      obligations -> build_rows(obligations, today)
+    end
   end
 
   def load_page(scope, today, mine?, lifecycle, query, sort, cursor) do
@@ -91,16 +92,19 @@ defmodule ArgusWeb.ObligationLive.IndexHelpers do
   end
 
   defp do_load_page(scope, today, status, query, sort, cursor) when sort != :urgency do
-    page =
-      Obligations.list_obligations_page(scope,
-        status: status,
-        query: query,
-        sort: sort,
-        cursor: cursor,
-        limit: @page_size
-      )
+    case Obligations.list_obligations_page(scope,
+           status: status,
+           query: query,
+           sort: sort,
+           cursor: cursor,
+           limit: @page_size
+         ) do
+      :not_authorise ->
+        %{rows: [], cursor: nil, end?: true}
 
-    %{rows: build_rows(page.rows, today), cursor: page.cursor, end?: page.end?}
+      page ->
+        %{rows: build_rows(page.rows, today), cursor: page.cursor, end?: page.end?}
+    end
   end
 
   # urgency reaches here only for the live lifecycle (effective_sort guarantees it).
@@ -119,15 +123,17 @@ defmodule ArgusWeb.ObligationLive.IndexHelpers do
   # (`due_before` excludes nulls, so dateless rows never enter the window).
   defp serve_window(scope, today, status, window_end, query, offset) do
     ranked =
-      scope
-      |> Obligations.list_obligations_page(
-        status: status,
-        query: query,
-        sort: :due_asc,
-        due_before: window_end,
-        limit: :all
-      )
-      |> Map.fetch!(:rows)
+      case Obligations.list_obligations_page(
+             scope,
+             status: status,
+             query: query,
+             sort: :due_asc,
+             due_before: window_end,
+             limit: :all
+           ) do
+        :not_authorise -> []
+        page -> Map.fetch!(page, :rows)
+      end
       |> Enum.sort_by(fn %Obligation{} = o ->
         {@urgency_rank[Urgency.classify(o.obligation_type, o.due_by, today)],
          Date.to_iso8601(o.due_by)}
@@ -146,17 +152,20 @@ defmodule ArgusWeb.ObligationLive.IndexHelpers do
   # The tail is the rest, SQL-keyset by `due_by` ascending NULLS LAST: dated rows
   # beyond the window first, then dateless duties (urgency :none) at the very end.
   defp serve_tail(scope, today, status, window_end, query, inner_cursor) do
-    page =
-      Obligations.list_obligations_page(scope,
-        status: status,
-        query: query,
-        sort: :due_asc,
-        due_after_or_null: window_end,
-        cursor: inner_cursor
-      )
+    case Obligations.list_obligations_page(scope,
+           status: status,
+           query: query,
+           sort: :due_asc,
+           due_after_or_null: window_end,
+           cursor: inner_cursor
+         ) do
+      :not_authorise ->
+        %{rows: [], cursor: nil, end?: true}
 
-    cursor = if page.end?, do: nil, else: encode_urgency_cursor({:tail, page.cursor})
-    %{rows: build_rows(page.rows, today), cursor: cursor, end?: page.end?}
+      page ->
+        cursor = if page.end?, do: nil, else: encode_urgency_cursor({:tail, page.cursor})
+        %{rows: build_rows(page.rows, today), cursor: cursor, end?: page.end?}
+    end
   end
 
   defp decode_urgency_cursor(nil), do: {:window, 0}

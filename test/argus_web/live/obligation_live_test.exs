@@ -263,6 +263,32 @@ defmodule ArgusWeb.ObligationLiveTest do
     assert has_element?(view, "#completion-modal")
   end
 
+  test "reconnect: restore_completion_modal reopens the completion modal", %{conn: conn} do
+    manager = Argus.EntitiesFixtures.manager_scope_fixture()
+    conn = log_in_user(conn, manager.user)
+    type = type_fixture(manager.entity, complete_documents: "receipt")
+
+    {:ok, obligation} =
+      Obligations.create_obligation(manager, %{
+        title: "EPF June",
+        obligation_type_id: type.id,
+        due_by: ~D[2026-06-30],
+        open_note: "EPF opened"
+      })
+
+    {:ok, view, _html} =
+      live(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}")
+
+    refute has_element?(view, "#completion-modal")
+
+    view
+    |> element("#obligation-show")
+    |> render_hook("restore_completion_modal", %{"slot" => "receipt"})
+
+    assert has_element?(view, "#completion-modal")
+    assert has_element?(view, "#completion-slot-receipt")
+  end
+
   test "reconnect: restore_step_files reopens the step files modal", %{conn: conn} do
     manager = Argus.EntitiesFixtures.manager_scope_fixture()
     conn = log_in_user(conn, manager.user)
@@ -522,6 +548,26 @@ defmodule ArgusWeb.ObligationLiveTest do
 
     view |> form("#end-series-form", %{"end_series" => %{"note" => ""}}) |> render_submit()
     assert render(view) =~ "A reason is required"
+  end
+
+  test "end series flow closes recurring series and redirects", %{conn: conn} do
+    {scope, obligation} = recurring_manager_scope_fixture(interval: "monthly")
+    conn = log_in_user(conn, scope.user)
+
+    {:ok, view, _html} =
+      live(conn, ~p"/entities/#{scope.entity.slug}/obligations/#{obligation.id}")
+
+    view |> element("#end-series-btn") |> render_click()
+    assert has_element?(view, "#end-series-modal")
+
+    view
+    |> form("#end-series-form", %{"end_series" => %{"note" => "Client left"}})
+    |> render_submit()
+
+    assert_redirect(view, ~p"/entities/#{scope.entity.slug}")
+
+    ended = Obligations.get_obligation!(scope, obligation.id)
+    assert ended.series_ended_at
   end
 
   test "mark done is hidden while a required document is missing", %{conn: conn} do

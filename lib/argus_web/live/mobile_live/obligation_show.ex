@@ -623,17 +623,15 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
           <p class="text-sm text-base-content/60 mt-1">
             Keeps this cycle for audit and creates a one-off replacement to redo the work.
           </p>
-          <.form for={%{}} id="m-correct-form" phx-submit="confirm_correct" class="mt-4 space-y-3">
+          <.form
+            for={@correct_form}
+            id="m-correct-form"
+            phx-submit="confirm_correct"
+            class="mt-4 space-y-3"
+          >
+            <.input field={@correct_form[:reason]} type="textarea" label="Reason (required)" required />
             <.input
-              name="correct[reason]"
-              value=""
-              type="textarea"
-              label="Reason (required)"
-              required
-            />
-            <.input
-              name="correct[replacement_due_by]"
-              value={@obligation.due_by && Date.to_iso8601(@obligation.due_by)}
+              field={@correct_form[:replacement_due_by]}
               type="date"
               label="Replacement due date"
             />
@@ -951,7 +949,10 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
   end
 
   def handle_event("open_correct_modal", _params, socket) do
-    {:noreply, assign(socket, :show_correct_modal, true)}
+    {:noreply,
+     socket
+     |> assign(:show_correct_modal, true)
+     |> assign(:correct_form, correct_form(socket.assigns.obligation))}
   end
 
   def handle_event("close_correct_modal", _params, socket) do
@@ -1045,7 +1046,18 @@ defmodule ArgusWeb.MobileLive.ObligationShow do
       to_form(%{"note" => "", "next_due_by" => suggestion(obligation, recurring?)}, as: :skip)
     )
     |> assign(:end_series_form, to_form(%{"note" => ""}, as: :end_series))
+    |> assign(:correct_form, correct_form(obligation))
     |> assign_edit_form(obligation)
+  end
+
+  defp correct_form(%Obligation{} = obligation) do
+    to_form(
+      %{
+        "reason" => "",
+        "replacement_due_by" => obligation.due_by && Date.to_iso8601(obligation.due_by)
+      },
+      as: "correct"
+    )
   end
 
   defp reload(socket) do

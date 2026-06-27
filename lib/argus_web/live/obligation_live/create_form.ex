@@ -122,7 +122,10 @@ defmodule ArgusWeb.ObligationLive.CreateForm do
   defp truncate_title(_), do: ""
 
   defp type_options(scope) do
-    Enum.map(Obligations.list_types(scope), &{&1.name, &1.id})
+    case Obligations.list_types(scope) do
+      :not_authorise -> []
+      types -> Enum.map(types, &{&1.name, &1.id})
+    end
   end
 
   defp member_options(scope) do

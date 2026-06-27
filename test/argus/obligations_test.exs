@@ -3,12 +3,66 @@ defmodule Argus.ObligationsTest do
 
   alias Argus.Obligations
 
+  import Argus.AccountsFixtures, only: [user_fixture: 0]
+
+  alias Argus.Accounts.Scope
+
   import Argus.EntitiesFixtures,
     only: [entity_scope_fixture: 0, manager_scope_fixture: 0, member_scope_fixture: 0]
 
   import Argus.ObligationsFixtures
 
+  describe "scope without entity" do
+    test "read APIs return :not_authorise instead of raising" do
+      user = user_fixture()
+      scope = Scope.for_user(user)
+
+      assert :not_authorise = Obligations.list_types(scope)
+      assert :not_authorise = Obligations.list_obligations(scope)
+      assert :not_authorise = Obligations.list_obligations_page(scope)
+      assert :not_authorise = Obligations.list_unassigned(scope)
+      assert :not_authorise = Obligations.list_recently_completed(scope)
+    end
+  end
+
   describe "create_obligation/2" do
+    test "rejects assignee and collaborators outside the entity" do
+      manager = manager_scope_fixture()
+      outsider = user_fixture()
+
+      type = type_fixture(manager.entity)
+
+      assert {:error, :invalid_assignee} =
+               Obligations.create_obligation(manager, %{
+                 title: "EPF Jan",
+                 obligation_type_id: type.id,
+                 primary_assignee_id: outsider.id,
+                 due_by: ~D[2026-01-15],
+                 open_note: "Open"
+               })
+
+      member = member_fixture(manager.entity)
+
+      assert {:error, :invalid_assignee} =
+               Obligations.create_obligation(manager, %{
+                 title: "EPF Feb",
+                 obligation_type_id: type.id,
+                 collaborator_ids: [outsider.id],
+                 due_by: ~D[2026-02-15],
+                 open_note: "Open"
+               })
+
+      assert {:ok, _} =
+               Obligations.create_obligation(manager, %{
+                 title: "EPF Mar",
+                 obligation_type_id: type.id,
+                 primary_assignee_id: member.id,
+                 collaborator_ids: [member.id],
+                 due_by: ~D[2026-03-15],
+                 open_note: "Open"
+               })
+    end
+
     test "creates obligation, open event, snapshots type rules, and open note" do
       scope = manager_scope_fixture()
 

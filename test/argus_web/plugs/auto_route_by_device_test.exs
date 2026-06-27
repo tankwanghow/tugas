@@ -17,7 +17,7 @@ defmodule ArgusWeb.Plugs.AutoRouteByDeviceTest do
       assert "/obligation-types" in tails
       assert "/todos" in tails
       assert "/todos/new" in tails
-      refute "/members" in tails
+      assert "/members" in tails
     end
   end
 
@@ -114,7 +114,7 @@ defmodule ArgusWeb.Plugs.AutoRouteByDeviceTest do
       assert conn.halted
     end
 
-    test "does not redirect mobile UA on desktop-only members page", %{conn: conn} do
+    test "redirects mobile UA from desktop members page to mobile", %{conn: conn} do
       conn =
         conn
         |> put_req_header("user-agent", @mobile_ua)
@@ -123,7 +123,8 @@ defmodule ArgusWeb.Plugs.AutoRouteByDeviceTest do
         |> Map.put(:query_string, "")
         |> AutoRouteByDevice.call([])
 
-      refute conn.halted
+      assert redirected_to(conn) == "/m/acme/members"
+      assert conn.halted
     end
 
     test "redirects desktop UA from mobile dashboard to desktop", %{conn: conn} do

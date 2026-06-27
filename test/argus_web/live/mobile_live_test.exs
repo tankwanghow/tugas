@@ -254,7 +254,34 @@ defmodule ArgusWeb.MobileLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/m/#{manager.entity.slug}")
 
+    refute has_element?(view, "#m-more-members-link")
     assert has_element?(view, "#m-more-types-link", "Types")
+  end
+
+  test "mobile more sheet shows Members link for admins", %{conn: conn} do
+    admin = Argus.EntitiesFixtures.entity_scope_fixture()
+    conn = mobile_conn(conn, admin)
+
+    {:ok, view, _html} = live(conn, ~p"/m/#{admin.entity.slug}")
+
+    assert has_element?(view, "#m-more-members-link", "Members")
+  end
+
+  test "mobile members page lists team and supports invite", %{conn: conn} do
+    admin = Argus.EntitiesFixtures.entity_scope_fixture()
+    conn = mobile_conn(conn, admin)
+
+    {:ok, view, _html} = live(conn, ~p"/m/#{admin.entity.slug}/members")
+
+    assert has_element?(view, "#m-members")
+    assert has_element?(view, "#m-members-list")
+    assert has_element?(view, "#m-invite-form")
+
+    view
+    |> form("#m-invite-form", %{"invite" => %{"email" => "", "role" => "member"}})
+    |> render_submit()
+
+    assert has_element?(view, "#m-invite-link")
   end
 
   test "mobile more sheet hides Types link for members", %{conn: conn} do

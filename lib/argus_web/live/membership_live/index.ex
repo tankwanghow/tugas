@@ -1,10 +1,7 @@
 defmodule ArgusWeb.MembershipLive.Index do
   use ArgusWeb, :live_view
 
-  alias Argus.Authorization
-  alias Argus.Entities
-
-  @roles [{"Admin", "admin"}, {"Manager", "manager"}, {"Member", "member"}]
+  alias ArgusWeb.MembershipLive.IndexHelpers
 
   @impl true
   def render(assigns) do
@@ -42,7 +39,7 @@ defmodule ArgusWeb.MembershipLive.Index do
                 <input type="hidden" name="membership_id" value={membership.id} />
                 <select name="role" class="select select-sm w-36">
                   <option
-                    :for={{label, value} <- roles()}
+                    :for={{label, value} <- IndexHelpers.roles()}
                     value={value}
                     selected={membership.role == value}
                   >
@@ -73,7 +70,12 @@ defmodule ArgusWeb.MembershipLive.Index do
               label="Email (optional)"
               class="input w-72"
             />
-            <.input field={@invite_form[:role]} type="select" label="Role" options={roles()} />
+            <.input
+              field={@invite_form[:role]}
+              type="select"
+              label="Role"
+              options={IndexHelpers.roles()}
+            />
             <.button class="btn btn-primary btn-sm" phx-disable-with="Inviting…">Send invite</.button>
           </.form>
           <div :if={@last_invite_link} class="alert alert-info mt-2" id="invite-link">
@@ -121,6 +123,7 @@ defmodule ArgusWeb.MembershipLive.Index do
               </div>
               <span class="badge badge-warning badge-sm">pending</span>
               <button
+                :if={@can_manage?}
                 id={"revoke-invite-#{invite.id}"}
                 type="button"
                 phx-click="revoke_invitation"
@@ -139,95 +142,21 @@ defmodule ArgusWeb.MembershipLive.Index do
 
   @impl true
   def mount(_params, _session, socket) do
-    {:ok,
-     socket
-     |> assign(:can_manage?, Authorization.can?(socket.assigns.current_scope, :manage_entity))
-     |> assign(:invite_form, to_form(%{"email" => "", "role" => "member"}, as: :invite))
-     |> assign(:last_invite_link, nil)
-     |> load_members()}
+    {:ok, IndexHelpers.mount_assigns(socket)}
   end
 
   @impl true
-  def handle_event("change_role", %{"membership_id" => id, "role" => role}, socket) do
-    scope = socket.assigns.current_scope
-    membership = Entities.get_membership_in_entity!(scope.entity, id)
-
-    case Entities.update_member_role(scope, membership, role) do
-      {:ok, _} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Role updated.")
-         |> assign(:last_invite_link, nil)
-         |> load_members()}
-
-      :not_authorise ->
-        {:noreply, put_flash(socket, :error, "Not authorized.")}
-
-      {:error, _} ->
-        {:noreply, put_flash(socket, :error, "Could not update role.")}
-    end
+  def handle_event("change_role", params, socket) do
+    IndexHelpers.handle_change_role(socket, params) |> IndexHelpers.handle_result()
   end
 
-  def handle_event("revoke_invitation", %{"invitation_id" => invitation_id}, socket) do
-    scope = socket.assigns.current_scope
-
-    case Entities.revoke_invitation(scope, invitation_id) do
-      {:ok, _} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Invitation revoked.")
-         |> assign(:last_invite_link, nil)
-         |> load_members()}
-
-      :not_authorise ->
-        {:noreply, put_flash(socket, :error, "Not authorized.")}
-
-      {:error, :not_found} ->
-        {:noreply, put_flash(socket, :error, "Invitation not found.")}
-    end
+  def handle_event("revoke_invitation", params, socket) do
+    IndexHelpers.handle_revoke_invitation(socket, params) |> IndexHelpers.handle_result()
   end
 
-  def handle_event("invite", %{"invite" => %{"email" => email, "role" => role}}, socket) do
-    scope = socket.assigns.current_scope
-
-    url_fun = fn encoded -> url(~p"/invitations/#{encoded}") end
-
-    case Entities.invite_member(scope, email, role, url_fun) do
-      {:ok, invitation} ->
-        link = url(~p"/invitations/#{Argus.Entities.Invitation.encode_token(invitation.token)}")
-
-        {:noreply,
-         socket
-         |> put_flash(:info, invite_flash(invitation))
-         |> assign(:invite_form, to_form(%{"email" => "", "role" => "member"}, as: :invite))
-         |> assign(:last_invite_link, link)
-         |> load_members()}
-
-      {:error, :seat_limit_reached} ->
-        {:noreply, put_flash(socket, :error, "Seat limit reached — no seats available.")}
-
-      :not_authorise ->
-        {:noreply, put_flash(socket, :error, "Not authorized.")}
-
-      {:error, %Ecto.Changeset{}} ->
-        {:noreply, put_flash(socket, :error, "Check the email address and try again.")}
-    end
+  def handle_event("invite", params, socket) do
+    IndexHelpers.handle_invite(socket, params) |> IndexHelpers.handle_result()
   end
 
   def handle_event("close_modal_on_escape", _params, socket), do: {:noreply, socket}
-
-  defp invite_flash(%{email: nil}), do: "Invitation created. Share the link below."
-  defp invite_flash(%{email: email}), do: "Invitation sent to #{email}."
-
-  defp load_members(socket) do
-    entity = socket.assigns.current_scope.entity
-    members = Entities.list_entity_members(entity)
-
-    socket
-    |> assign(:members, members)
-    |> assign(:seats_used, length(members))
-    |> assign(:pending, Entities.list_pending_invitations(entity))
-  end
-
-  defp roles, do: @roles
 end

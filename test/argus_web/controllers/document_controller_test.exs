@@ -243,6 +243,72 @@ defmodule ArgusWeb.DocumentControllerTest do
 
       assert json_response(conn, 403)["ok"] == false
     end
+
+    test "uploads a step file to a specific event_id", %{conn: conn} do
+      manager = manager_scope_fixture()
+      conn = log_in_user(conn, manager.user)
+      type = type_fixture(manager.entity, complete_documents: "")
+
+      {:ok, obligation} =
+        Obligations.create_obligation(manager, %{
+          title: "EPF",
+          obligation_type_id: type.id,
+          due_by: ~D[2026-06-30],
+          open_note: "open"
+        })
+
+      [open_event] = Enum.filter(Obligations.list_events(obligation), &(&1.status == "open"))
+
+      path = Path.join(System.tmp_dir!(), "step_#{System.unique_integer()}.pdf")
+      File.write!(path, "step file contents")
+
+      conn =
+        post(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}/documents", %{
+          "file" => %Plug.Upload{
+            path: path,
+            filename: "notes.pdf",
+            content_type: "application/pdf"
+          },
+          "event_id" => open_event.id
+        })
+
+      assert json_response(conn, 200)["ok"] == true
+
+      obligation = Obligations.get_obligation!(manager, obligation.id)
+      event = Enum.find(obligation.events, &(&1.id == open_event.id))
+
+      assert Enum.any?(event.documents, &(&1.file["original"] == "notes.pdf"))
+    end
+
+    test "rejects an oversized image with 413", %{conn: conn} do
+      manager = manager_scope_fixture()
+      conn = log_in_user(conn, manager.user)
+      type = type_fixture(manager.entity, complete_documents: "")
+
+      {:ok, obligation} =
+        Obligations.create_obligation(manager, %{
+          title: "EPF",
+          obligation_type_id: type.id,
+          due_by: ~D[2026-06-30],
+          open_note: "open"
+        })
+
+      path = Path.join(System.tmp_dir!(), "big_img_#{System.unique_integer()}.jpg")
+      File.write!(path, String.duplicate("x", 6_000_000))
+
+      conn =
+        post(conn, ~p"/entities/#{manager.entity.slug}/obligations/#{obligation.id}/documents", %{
+          "file" => %Plug.Upload{
+            path: path,
+            filename: "photo.jpg",
+            content_type: "image/jpeg"
+          }
+        })
+
+      body = json_response(conn, 413)
+      assert body["ok"] == false
+      assert body["error"] =~ "max"
+    end
   end
 
   test "serves a voided document so it can still be downloaded", %{conn: conn} do

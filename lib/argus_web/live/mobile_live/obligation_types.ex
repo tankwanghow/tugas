@@ -217,7 +217,14 @@ defmodule ArgusWeb.MobileLive.ObligationTypes do
   end
 
   defp load_types(socket) do
-    assign(socket, :types, Obligations.list_types(socket.assigns.current_scope))
+    assign(socket, :types, list_types(socket.assigns.current_scope))
+  end
+
+  defp list_types(scope) do
+    case Obligations.list_types(scope) do
+      :not_authorise -> []
+      types -> types
+    end
   end
 
   defp interval_options do

@@ -21,7 +21,14 @@ defmodule ArgusWeb.Plugs.AutoRouteByDevice do
   @behaviour Plug
   import Plug.Conn
 
-  @mobile_capable_tails ["", "/obligations/new", "/obligation-types", "/todos", "/todos/new"]
+  @mobile_capable_tails [
+    "",
+    "/obligations/new",
+    "/obligation-types",
+    "/todos",
+    "/todos/new",
+    "/members"
+  ]
 
   def init(opts), do: opts
 
