@@ -19,7 +19,7 @@ defmodule TugasWeb.DashboardTodosPanel do
     ~H"""
     <aside
       id="dashboard-todos"
-      class="flex flex-1 flex-col min-h-0 rounded-lg border border-base-300 bg-base-200/40 p-3"
+      class="flex h-full min-h-0 flex-1 flex-col rounded-lg border border-base-300 bg-base-200/40 p-3"
     >
       <div class="flex shrink-0 items-center gap-2 pb-2">
         <h2 class="text-lg font-semibold">Todos</h2>
@@ -28,49 +28,51 @@ defmodule TugasWeb.DashboardTodosPanel do
         </.link>
       </div>
 
-      <div class="flex flex-[2] min-h-0 flex-col">
-        <ul
-          :if={@todos != []}
-          id="dashboard-todos-list"
-          class="flex-1 min-h-0 space-y-2 overflow-y-auto"
-        >
-          <.todo_row
-            :for={todo <- @todos}
-            todo={todo}
-            slug={@slug}
-            row_effects={@row_effects}
-            id_prefix="dashboard-todo"
-          />
-        </ul>
+      <div class="flex min-h-0 flex-1 flex-col">
+        <div class="flex min-h-0 flex-[2] flex-col">
+          <ul
+            :if={@todos != []}
+            id="dashboard-todos-list"
+            class="min-h-0 flex-1 space-y-2 overflow-y-auto"
+          >
+            <.todo_row
+              :for={todo <- @todos}
+              todo={todo}
+              slug={@slug}
+              row_effects={@row_effects}
+              id_prefix="dashboard-todo"
+            />
+          </ul>
 
-        <p :if={@todos == []} class="flex-1 text-sm text-base-content/60">
-          No open todos.
-          <.link navigate={~p"/entities/#{@slug}/todos"} class="link link-primary">Add one</.link>
-        </p>
-      </div>
+          <p :if={@todos == []} class="flex-1 text-sm text-base-content/60">
+            No open todos.
+            <.link navigate={~p"/entities/#{@slug}/todos"} class="link link-primary">Add one</.link>
+          </p>
+        </div>
 
-      <div class="flex flex-[1] min-h-0 flex-col border-t border-base-300 mt-2 pt-2">
-        <h3 class="shrink-0 text-sm font-semibold text-base-content/70 mb-1">
-          Recently completed
-        </h3>
-        <ul
-          :if={@completed_todos != []}
-          id="dashboard-completed-todos-list"
-          class="flex-1 min-h-0 space-y-2 overflow-y-auto"
-        >
-          <.todo_row
-            :for={todo <- @completed_todos}
-            todo={todo}
-            slug={@slug}
-            row_effects={@row_effects}
-            id_prefix="dashboard-completed-todo"
-            completed?
-          />
-        </ul>
+        <div class="mt-2 flex min-h-0 flex-[1] flex-col border-t border-base-300 pt-2">
+          <h3 class="mb-1 shrink-0 text-sm font-semibold text-base-content/70">
+            Recently completed
+          </h3>
+          <ul
+            :if={@completed_todos != []}
+            id="dashboard-completed-todos-list"
+            class="min-h-0 flex-1 space-y-2 overflow-y-auto"
+          >
+            <.todo_row
+              :for={todo <- @completed_todos}
+              todo={todo}
+              slug={@slug}
+              row_effects={@row_effects}
+              id_prefix="dashboard-completed-todo"
+              completed?
+            />
+          </ul>
 
-        <p :if={@completed_todos == []} class="flex-1 text-sm text-base-content/60">
-          No completed todos yet.
-        </p>
+          <p :if={@completed_todos == []} class="flex-1 text-sm text-base-content/60">
+            No completed todos yet.
+          </p>
+        </div>
       </div>
     </aside>
     """

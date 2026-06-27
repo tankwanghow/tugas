@@ -6,7 +6,7 @@ defmodule TugasWeb.DashboardLive.Index do
   alias Tugas.Todos.Todo
   alias TugasWeb.DashboardLive.CalendarHelpers, as: Calendar
   alias TugasWeb.DutiesFilter
-  @open_preview_limit 22
+  @open_preview_limit 10
   @completed_preview_limit 10
 
   @impl true
@@ -67,8 +67,8 @@ defmodule TugasWeb.DashboardLive.Index do
           </div>
         </div>
 
-        <div class="flex flex-col lg:flex-row gap-6 lg:items-stretch">
-          <div class="flex-1 min-w-0">
+        <div class="flex flex-col lg:flex-row gap-6 lg:items-stretch min-h-0">
+          <div class="flex-1 min-w-0 min-h-0">
             <.duty_calendar
               grid={@grid}
               grouped={@grouped}
@@ -80,7 +80,7 @@ defmodule TugasWeb.DashboardLive.Index do
             />
           </div>
 
-          <div class="w-full lg:w-[15%] shrink-0 flex flex-col">
+          <div class="w-full lg:w-[15%] shrink-0 flex flex-col min-h-0 lg:h-auto lg:self-stretch">
             <.dashboard_todos_panel
               todos={@todos}
               completed_todos={@completed_todos}
