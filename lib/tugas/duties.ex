@@ -173,6 +173,9 @@ defmodule Tugas.Duties do
     |> where([o], o.entity_id == ^entity.id)
     |> scope_to_assignee(status, user)
     |> apply_status_filter(status)
+    |> apply_due_bound(:before, Keyword.get(opts, :due_before))
+    |> apply_due_bound(:after, Keyword.get(opts, :due_after))
+    |> apply_dateless_filter(Keyword.get(opts, :dateless))
     |> apply_list_order(status)
     |> preload([:duty_type, :primary_assignee])
     |> Repo.all()
@@ -287,6 +290,9 @@ defmodule Tugas.Duties do
 
   defp apply_due_bound(query, :after_or_null, %Date{} = d),
     do: where(query, [o], o.due_by > ^d or is_nil(o.due_by))
+
+  defp apply_dateless_filter(query, true), do: where(query, [o], is_nil(o.due_by))
+  defp apply_dateless_filter(query, _), do: query
 
   defp apply_page_search(query, q) when q in [nil, ""], do: query
 

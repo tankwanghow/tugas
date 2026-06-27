@@ -580,6 +580,77 @@ defmodule Tugas.DutiesTest do
     end
   end
 
+  describe "list_duties/2 date filters" do
+    setup do
+      manager = Tugas.EntitiesFixtures.manager_scope_fixture()
+      type = Tugas.DutiesFixtures.type_fixture(manager.entity)
+
+      {:ok, early} =
+        Tugas.Duties.create_duty(manager, %{
+          title: "Early",
+          duty_type_id: type.id,
+          due_by: ~D[2026-06-05],
+          open_note: "early"
+        })
+
+      {:ok, mid} =
+        Tugas.Duties.create_duty(manager, %{
+          title: "Mid",
+          duty_type_id: type.id,
+          due_by: ~D[2026-06-15],
+          open_note: "mid"
+        })
+
+      {:ok, late} =
+        Tugas.Duties.create_duty(manager, %{
+          title: "Late",
+          duty_type_id: type.id,
+          due_by: ~D[2026-06-25],
+          open_note: "late"
+        })
+
+      {:ok, someday} =
+        Tugas.Duties.create_duty(manager, %{
+          title: "Someday duty",
+          duty_type_id: type.id,
+          someday: true,
+          open_note: "someday"
+        })
+
+      %{manager: manager, early: early, mid: mid, late: late, someday: someday}
+    end
+
+    test "due_after and due_before restrict to a month window", %{
+      manager: manager,
+      early: early,
+      mid: mid,
+      late: late
+    } do
+      duties =
+        Tugas.Duties.list_duties(manager,
+          status: :live,
+          due_after: ~D[2026-06-01],
+          due_before: ~D[2026-06-20]
+        )
+
+      ids = Enum.map(duties, & &1.id)
+      assert early.id in ids
+      assert mid.id in ids
+      refute late.id in ids
+    end
+
+    test "dateless: true returns only nil due_by duties", %{
+      manager: manager,
+      someday: someday,
+      mid: mid
+    } do
+      duties = Tugas.Duties.list_duties(manager, status: :live, dateless: true)
+      ids = Enum.map(duties, & &1.id)
+      assert someday.id in ids
+      refute mid.id in ids
+    end
+  end
+
   describe "list_unassigned/1 and list_recently_completed/1" do
     test "list_unassigned returns live duties with no primary assignee" do
       manager = manager_scope_fixture()
