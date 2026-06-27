@@ -45,6 +45,7 @@ defmodule ArgusWeb.TodoLive.IndexHelpers do
       :created -> "todo-row--created"
       :updated -> "todo-row--updated"
       :completed -> "todo-row--completed"
+      :canceled -> "todo-row--canceled"
       :deleted -> "todo-row--deleted"
       _ -> nil
     end
@@ -397,12 +398,11 @@ defmodule ArgusWeb.TodoLive.IndexHelpers do
     todo = socket.assigns.canceling_todo
 
     case todo && Todos.cancel_todo(scope, todo, note) do
-      {:ok, _} ->
+      {:ok, canceled} ->
         {:ok,
          socket
-         |> put_flash(:info, "Todo canceled.")
          |> close_cancel_modal()
-         |> load_first_page()}
+         |> apply_save_effect(scope, canceled, :canceled)}
 
       {:error, :note_required} ->
         {:error, put_flash(socket, :error, "A cancel note is required.")}

@@ -447,6 +447,19 @@
   }
 }
 
+/* Cancel: neutral flash that settles in place — the canceled row stays (muted/struck), not removed */
+@keyframes todo-row-canceled {
+  0%,
+  25% {
+    background-color: color-mix(in oklch, var(--color-neutral) 45%, var(--color-base-100));
+    border-left-color: var(--color-neutral);
+  }
+  100% {
+    background-color: transparent;
+    border-left-color: transparent;
+  }
+}
+
 /* Delete: red flash (0–36%) then collapse (36–100%) in one timeline */
 @keyframes todo-row-deleted {
   0%,
@@ -472,6 +485,10 @@
 
 .todo-row--completed {
   animation: todo-row-completed 2.5s ease-out 150ms forwards;
+}
+
+.todo-row--canceled {
+  animation: todo-row-canceled 2.5s ease-out 150ms forwards;
 }
 
 .todo-row--deleted {
@@ -508,6 +525,7 @@
   .todo-row--created,
   .todo-row--updated,
   .todo-row--completed,
+  .todo-row--canceled,
   .todo-row--deleted {
     animation-duration: 0.01ms;
     animation-delay: 0ms;

@@ -2,6 +2,7 @@ const ANIMATION_NAME = {
   created: "todo-row-created",
   updated: "todo-row-updated",
   completed: "todo-row-completed",
+  canceled: "todo-row-canceled",
   deleted: "todo-row-deleted",
 }
 
