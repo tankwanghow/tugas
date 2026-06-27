@@ -192,8 +192,8 @@ defmodule TugasWeb.MobileLive.DashboardTest do
     assert has_element?(view, "#m-dashboard-someday")
     assert has_element?(view, "#duty-calendar")
     assert has_element?(view, "#dashboard-todos")
-    assert has_element?(view, "#m-dashboard-swipe-hint", "Someday")
-    assert has_element?(view, "#m-dashboard-swipe-hint", "Todos")
+    assert has_element?(view, "#m-dashboard-go-someday", "Someday")
+    assert has_element?(view, "#m-dashboard-go-todos", "Todos")
   end
 
   defp dashboard_open_todo_ids(view) do

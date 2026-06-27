@@ -64,23 +64,36 @@ defmodule TugasWeb.MobileLive.Dashboard do
         </div>
       </div>
 
-      <div id="m-dashboard" class="px-4 py-3 space-y-2">
+      <div id="m-dashboard" phx-hook="DashboardSwipe" class="px-4 py-3 space-y-2">
         <div
           id="m-dashboard-swipe-hint"
-          class="flex items-center justify-between text-[11px] text-base-content/50 px-1"
+          class="flex items-center justify-between px-1"
         >
-          <span>← Someday</span>
+          <button
+            type="button"
+            id="m-dashboard-go-someday"
+            data-dashboard-go="0"
+            class="min-h-10 px-2 py-2 text-sm text-base-content/50 rounded-lg active:bg-base-200"
+          >
+            ← Someday
+          </button>
           <div id="m-dashboard-dots" class="flex items-center gap-1.5" aria-hidden="true">
             <span data-dashboard-panel="0" class="size-1.5 rounded-full bg-base-content/20" />
             <span data-dashboard-panel="1" class="size-1.5 rounded-full bg-primary" />
             <span data-dashboard-panel="2" class="size-1.5 rounded-full bg-base-content/20" />
           </div>
-          <span>Todos →</span>
+          <button
+            type="button"
+            id="m-dashboard-go-todos"
+            data-dashboard-go="2"
+            class="min-h-10 px-2 py-2 text-sm text-base-content/50 rounded-lg active:bg-base-200"
+          >
+            Todos →
+          </button>
         </div>
 
         <div
           id="m-dashboard-swipe"
-          phx-hook="DashboardSwipe"
           class="flex h-[calc(100dvh-15.5rem)] snap-x snap-mandatory overflow-x-auto overflow-y-hidden scroll-smooth [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         >
           <div class="w-full shrink-0 snap-center h-full min-h-0 overflow-y-auto pr-2">
