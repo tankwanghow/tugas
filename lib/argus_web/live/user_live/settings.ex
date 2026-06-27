@@ -12,6 +12,7 @@ defmodule ArgusWeb.UserLive.Settings do
       <.settings_body
         email_form={@email_form}
         password_form={@password_form}
+        username_form={@username_form}
         current_email={@current_email}
         trigger_submit={@trigger_submit}
         back_path={@back_path}
@@ -22,6 +23,7 @@ defmodule ArgusWeb.UserLive.Settings do
       <.settings_body
         email_form={@email_form}
         password_form={@password_form}
+        username_form={@username_form}
         current_email={@current_email}
         trigger_submit={@trigger_submit}
         back_path={@back_path}
@@ -48,6 +50,7 @@ defmodule ArgusWeb.UserLive.Settings do
     user = socket.assigns.current_scope.user
     email_changeset = Accounts.change_user_email(user, %{}, validate_unique: false)
     password_changeset = Accounts.change_user_password(user, %{}, hash_password: false)
+    username_changeset = Accounts.change_user_username(user, %{}, validate_unique: false)
     mobile? = ArgusWeb.Device.mobile_from_socket?(socket)
 
     socket =
@@ -57,6 +60,7 @@ defmodule ArgusWeb.UserLive.Settings do
       |> assign(:current_email, user.email)
       |> assign(:email_form, to_form(email_changeset))
       |> assign(:password_form, to_form(password_changeset))
+      |> assign(:username_form, to_form(username_changeset))
       |> assign(:trigger_submit, false)
 
     {:ok, socket}
@@ -68,6 +72,7 @@ defmodule ArgusWeb.UserLive.Settings do
 
   attr :email_form, :any, required: true
   attr :password_form, :any, required: true
+  attr :username_form, :any, required: true
   attr :current_email, :string, required: true
   attr :trigger_submit, :boolean, required: true
   attr :back_path, :string, required: true
@@ -101,6 +106,24 @@ defmodule ArgusWeb.UserLive.Settings do
           required
         />
         <.button variant="primary" phx-disable-with="Changing...">Change Email</.button>
+      </.form>
+
+      <div class="divider" />
+
+      <.form
+        for={@username_form}
+        id="username_form"
+        phx-submit="update_username"
+        phx-change="validate_username"
+      >
+        <.input
+          field={@username_form[:username]}
+          type="text"
+          label="Username"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <.button variant="primary" phx-disable-with="Saving...">Save Username</.button>
       </.form>
 
       <div class="divider" />
@@ -175,6 +198,37 @@ defmodule ArgusWeb.UserLive.Settings do
 
       changeset ->
         {:noreply, assign(socket, :email_form, to_form(changeset, action: :insert))}
+    end
+  end
+
+  def handle_event("validate_username", params, socket) do
+    %{"user" => user_params} = params
+
+    username_form =
+      socket.assigns.current_scope.user
+      |> Accounts.change_user_username(user_params, validate_unique: false)
+      |> Map.put(:action, :validate)
+      |> to_form()
+
+    {:noreply, assign(socket, username_form: username_form)}
+  end
+
+  def handle_event("update_username", params, socket) do
+    %{"user" => user_params} = params
+    user = socket.assigns.current_scope.user
+
+    case Accounts.update_user_username(user, user_params) do
+      {:ok, updated_user} ->
+        scope = %{socket.assigns.current_scope | user: updated_user}
+
+        {:noreply,
+         socket
+         |> assign(:current_scope, scope)
+         |> assign(:username_form, to_form(Accounts.change_user_username(updated_user)))
+         |> put_flash(:info, "Username updated.")}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :username_form, to_form(changeset, action: :insert))}
     end
   end
 

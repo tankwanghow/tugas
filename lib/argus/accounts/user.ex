@@ -38,6 +38,66 @@ defmodule Argus.Accounts.User do
     |> validate_email(opts)
   end
 
+  @doc """
+  Changeset for a user changing their own username from settings. A blank value
+  clears the username (allowed only while the user still has an email to log in
+  with — a username-only user must keep one). A present username is validated
+  for format, length, and uniqueness.
+  """
+  def username_changeset(user, attrs, opts \\ []) do
+    user
+    # empty_values: [] keeps "" so a deliberate clear registers as a change
+    |> cast(attrs, [:username], empty_values: [])
+    |> normalize_blank_username()
+    |> validate_settings_username(user, opts)
+  end
+
+  defp normalize_blank_username(changeset) do
+    case get_change(changeset, :username) do
+      username when is_binary(username) ->
+        if String.trim(username) == "",
+          do: put_change(changeset, :username, nil),
+          else: changeset
+
+      _ ->
+        changeset
+    end
+  end
+
+  defp validate_settings_username(changeset, user, opts) do
+    case get_field(changeset, :username) do
+      nil ->
+        if is_nil(user.email) do
+          add_error(
+            changeset,
+            :username,
+            "is required because you have no email to log in with"
+          )
+        else
+          changeset
+        end
+
+      _username ->
+        changeset = validate_username_rules(changeset)
+
+        if Keyword.get(opts, :validate_unique, true) do
+          changeset
+          |> unsafe_validate_unique(:username, Argus.Repo)
+          |> unique_constraint(:username)
+        else
+          changeset
+        end
+    end
+  end
+
+  defp validate_username_rules(changeset) do
+    changeset
+    |> validate_format(:username, ~r/^[a-zA-Z0-9_]+$/,
+      message: "only letters, numbers, and underscores"
+    )
+    |> validate_length(:username, min: 3, max: 30)
+  end
+
   defp validate_email(changeset, opts) do
     changeset =
       changeset

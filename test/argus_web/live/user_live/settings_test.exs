@@ -52,6 +52,36 @@ defmodule ArgusWeb.UserLive.SettingsTest do
     end
   end
 
+  describe "update username form" do
+    setup %{conn: conn} do
+      user = user_fixture()
+      %{conn: log_in_user(conn, user), user: user}
+    end
+
+    test "updates the username", %{conn: conn, user: user} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      result =
+        lv
+        |> form("#username_form", %{"user" => %{"username" => "freshhandle"}})
+        |> render_submit()
+
+      assert result =~ "Username updated"
+      assert Accounts.get_user_by_username("freshhandle").id == user.id
+    end
+
+    test "renders errors with invalid data (phx-change)", %{conn: conn} do
+      {:ok, lv, _html} = live(conn, ~p"/users/settings")
+
+      result =
+        lv
+        |> element("#username_form")
+        |> render_change(%{"user" => %{"username" => "no spaces"}})
+
+      assert result =~ "only letters, numbers, and underscores"
+    end
+  end
+
   describe "update email form" do
     setup %{conn: conn} do
       user = user_fixture()

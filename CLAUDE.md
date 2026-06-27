@@ -32,7 +32,12 @@ applies here too. Headlines:
 - **Magic-link-first onboarding, password fallback** (peggy / `phx.gen.auth` 1.8): register with
   email → emailed login link → confirm → land on entity create/select. Login also accepts an
   email+password (fallback) once a user sets a password in settings; `hashed_password` stays
-  nullable. A `%Argus.Accounts.Scope{user, entity, membership, role}` struct flows as
+  nullable. **Account settings** (`UserLive.Settings`, sudo-gated) lets a user change their
+  **email** (token-confirmed), **password**, and **username** (`Accounts.update_user_username/2`
+  via `User.username_changeset/3` — a direct change, validated for format/length/uniqueness;
+  blank clears it, but only while the user still has an email, since username is a login handle
+  and a DB constraint requires email-or-username). A
+  `%Argus.Accounts.Scope{user, entity, membership, role}` struct flows as
   `@current_scope`; never `@current_user`/`@current_role` in templates.
 - **Dual UI:** Desktop `/entities/:entity_slug/...`, Mobile `/m/:entity_slug/...`, with an
   `AutoRouteByDevice` plug (mobile-capable tails: `""`, `/obligations/new`, `/obligation-types`,

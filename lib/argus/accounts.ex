@@ -196,6 +196,24 @@ defmodule Argus.Accounts do
   end
 
   @doc """
+  Returns an `%Ecto.Changeset{}` for changing the user's username.
+
+  See `Argus.Accounts.User.username_changeset/3` for supported options.
+  """
+  def change_user_username(user, attrs \\ %{}, opts \\ []) do
+    User.username_changeset(user, attrs, opts)
+  end
+
+  @doc """
+  Updates the user's username (a direct change — no email-style confirmation).
+  """
+  def update_user_username(%User{} = user, attrs) do
+    user
+    |> User.username_changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
   Updates the user password.
 
   Returns a tuple with the updated user, as well as a list of expired tokens.

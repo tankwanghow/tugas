@@ -421,6 +421,53 @@ defmodule Argus.AccountsTest do
     end
   end
 
+  describe "change_user_username/3 and update_user_username/2" do
+    test "change_user_username/3 returns a changeset" do
+      assert %Ecto.Changeset{} = Accounts.change_user_username(user_fixture())
+    end
+
+    test "sets a username on an email user" do
+      user = user_fixture()
+      assert {:ok, updated} = Accounts.update_user_username(user, %{"username" => "newhandle"})
+      assert updated.username == "newhandle"
+    end
+
+    test "rejects a username already taken (case-insensitive)" do
+      username_user_fixture(%{username: "taken"})
+      user = user_fixture()
+
+      assert {:error, changeset} = Accounts.update_user_username(user, %{"username" => "TAKEN"})
+      assert %{username: ["has already been taken"]} = errors_on(changeset)
+    end
+
+    test "rejects an invalid format" do
+      user = user_fixture()
+
+      assert {:error, changeset} =
+               Accounts.update_user_username(user, %{"username" => "no spaces"})
+
+      assert %{username: [_ | _]} = errors_on(changeset)
+    end
+
+    test "rejects a too-short username" do
+      user = user_fixture()
+      assert {:error, changeset} = Accounts.update_user_username(user, %{"username" => "ab"})
+      assert %{username: [_ | _]} = errors_on(changeset)
+    end
+
+    test "clears the username for a user who still has an email" do
+      user = user_fixture(%{}) |> set_username("droppable")
+      assert {:ok, updated} = Accounts.update_user_username(user, %{"username" => ""})
+      assert is_nil(updated.username)
+    end
+
+    test "refuses to clear the username when the user has no email" do
+      user = username_user_fixture(%{username: "onlyhandle"})
+      assert {:error, changeset} = Accounts.update_user_username(user, %{"username" => ""})
+      assert %{username: [_ | _]} = errors_on(changeset)
+    end
+  end
+
   describe "identity constraints" do
     test "rejects a user with neither email nor username" do
       assert_raise Ecto.ConstraintError, ~r/users_email_or_username_required/, fn ->
@@ -523,5 +570,11 @@ defmodule Argus.AccountsTest do
       assert cs.valid?
       assert get_field(cs, :email) == nil
     end
+  end
+
+  defp set_username(user, username) do
+    user
+    |> Ecto.Changeset.change(username: username)
+    |> Argus.Repo.update!()
   end
 end
