@@ -144,7 +144,7 @@ defmodule TugasWeb.DutyCalendar do
       <p :if={@rows == []} class="text-sm text-base-content/60">
         No someday duties.
       </p>
-      <ul :if={@rows != []} class="min-h-0 flex-1 space-y-1 overflow-y-auto">
+      <ul :if={@rows != []} class="min-h-0 flex-1 space-y-2 overflow-y-auto">
         <li :for={row <- @rows}>
           <.duty_chip
             row={row}
@@ -173,14 +173,16 @@ defmodule TugasWeb.DutyCalendar do
       id={"#{@id_prefix}-#{@row.duty.id}"}
       navigate={duty_show_path(@variant, @slug, @row.duty.id)}
       class={[
-        chip_text_class(@variant),
-        "px-1.5 py-0.5 rounded border-l-2 truncate hover:bg-base-200",
+        chip_text_class(@variant, @layout),
+        chip_surface_class(@variant, @layout),
         chip_layout_class(@layout),
-        tier_border(@row.tier)
+        chip_tier_border(@variant, @layout, @row.tier)
       ]}
     >
-      <span class="font-medium">{@row.duty.title}</span>
-      <span :if={@show_type?} class="text-base-content/50 ml-1">{@row.duty.duty_type.name}</span>
+      <span class={chip_title_class(@variant, @layout)}>{@row.duty.title}</span>
+      <span :if={@show_type?} class={chip_type_class(@variant, @layout)}>
+        {@row.duty.duty_type.name}
+      </span>
     </.link>
     """
   end
@@ -256,8 +258,23 @@ defmodule TugasWeb.DutyCalendar do
   defp someday_chips_class(true), do: "flex gap-1 overflow-x-auto flex-nowrap items-center"
   defp someday_chips_class(false), do: "flex flex-wrap gap-1 items-center"
 
-  defp chip_text_class(:mobile), do: "block text-[10px]"
-  defp chip_text_class(_), do: "block text-xs"
+  defp chip_text_class(:mobile, :list), do: "block text-base leading-snug"
+  defp chip_text_class(:mobile, _), do: "block text-[10px]"
+  defp chip_text_class(_, _), do: "block text-xs"
+
+  defp chip_surface_class(:mobile, :list),
+    do: "px-3 py-3 min-h-12 rounded-lg border border-base-300 bg-base-100 active:bg-base-200"
+
+  defp chip_surface_class(_, _), do: "px-1.5 py-0.5 rounded hover:bg-base-200"
+
+  defp chip_title_class(:mobile, :list), do: "font-medium block"
+  defp chip_title_class(_, _), do: "font-medium truncate"
+
+  defp chip_type_class(:mobile, :list), do: "text-sm text-base-content/50 block mt-0.5"
+  defp chip_type_class(_, _), do: "text-base-content/50 ml-1"
+
+  defp chip_tier_border(:mobile, :list, tier), do: ["border-l-4", tier_border(tier)]
+  defp chip_tier_border(_, _, tier), do: ["border-l-2", tier_border(tier)]
 
   defp chip_layout_class(:someday), do: "block w-44 max-w-44 shrink-0"
   defp chip_layout_class(:list), do: "block w-full min-w-0"

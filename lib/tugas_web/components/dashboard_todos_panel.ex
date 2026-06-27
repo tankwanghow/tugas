@@ -41,6 +41,7 @@ defmodule TugasWeb.DashboardTodosPanel do
               slug={@slug}
               row_effects={@row_effects}
               id_prefix="dashboard-todo"
+              mobile?={@mobile?}
             />
           </ul>
 
@@ -65,6 +66,7 @@ defmodule TugasWeb.DashboardTodosPanel do
               slug={@slug}
               row_effects={@row_effects}
               id_prefix="dashboard-completed-todo"
+              mobile?={@mobile?}
               completed?
             />
           </ul>
@@ -107,6 +109,7 @@ defmodule TugasWeb.DashboardTodosPanel do
   attr :slug, :string, required: true
   attr :row_effects, :map, required: true
   attr :id_prefix, :string, required: true
+  attr :mobile?, :boolean, default: false
   attr :completed?, :boolean, default: false
 
   defp todo_row(assigns) do
@@ -117,7 +120,8 @@ defmodule TugasWeb.DashboardTodosPanel do
       data-todo-id={@todo.id}
       data-effect={IndexHelpers.row_effect_name(@row_effects, @todo.id)}
       class={[
-        "flex items-start gap-2 px-1 py-1 border border-transparent rounded",
+        "flex border border-transparent rounded",
+        todo_row_layout_class(@mobile?),
         @completed? && "opacity-60",
         IndexHelpers.row_effect_class(@row_effects, @todo.id)
       ]}
@@ -125,13 +129,13 @@ defmodule TugasWeb.DashboardTodosPanel do
       <input
         id={"#{@id_prefix}-complete-#{@todo.id}"}
         type="checkbox"
-        class="checkbox checkbox-sm mt-0.5"
+        class={todo_checkbox_class(@mobile?)}
         checked={Todo.completed?(@todo)}
         phx-click="toggle_todo_complete"
         phx-value-id={@todo.id}
       />
       <span class={[
-        "text-sm truncate",
+        todo_title_class(@mobile?),
         IndexHelpers.title_strike?(@todo) && "line-through text-base-content/60"
       ]}>
         {@todo.title}
@@ -139,6 +143,15 @@ defmodule TugasWeb.DashboardTodosPanel do
     </li>
     """
   end
+
+  defp todo_row_layout_class(true), do: "items-center gap-3 px-2 py-3 min-h-12 bg-base-100"
+  defp todo_row_layout_class(false), do: "items-start gap-2 px-1 py-1"
+
+  defp todo_checkbox_class(true), do: "checkbox checkbox-lg shrink-0"
+  defp todo_checkbox_class(false), do: "checkbox checkbox-sm mt-0.5"
+
+  defp todo_title_class(true), do: "text-base font-medium leading-snug flex-1 min-w-0"
+  defp todo_title_class(false), do: "text-sm truncate"
 
   defp panel_body_class(true), do: "min-h-0 flex-1 space-y-2 overflow-y-auto"
   defp panel_body_class(false), do: "flex min-h-0 flex-1 flex-col"
@@ -151,7 +164,7 @@ defmodule TugasWeb.DashboardTodosPanel do
   defp completed_section_class(false),
     do: "mt-2 flex min-h-0 flex-[1] flex-col border-t border-base-300 pt-2"
 
-  defp list_class(true), do: "space-y-2"
+  defp list_class(true), do: "space-y-2.5"
   defp list_class(false), do: "min-h-0 flex-1 space-y-2 overflow-y-auto"
 
   defp empty_class(true), do: "text-sm text-base-content/60"
