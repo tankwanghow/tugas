@@ -50,7 +50,7 @@ defmodule TugasWeb.Layouts do
             navigate={entity_dashboard_nav(@current_scope)}
             class="flex items-center gap-2 font-bold text-lg"
           >
-            <.brand_logo class="size-7" show_wordmark wordmark_class="font-bold text-lg" />
+            <.brand_logo class="size-7" show_wordmark wordmark_class="font-bold text-2xl" />
             <span
               :if={entity_scope?(@current_scope)}
               class="text-base-content/60"
@@ -111,7 +111,7 @@ defmodule TugasWeb.Layouts do
   defp entity_nav(assigns) do
     ~H"""
     <nav class="border-b border-base-300 bg-base-200/50 px-4 sm:px-6 lg:px-8 overflow-visible">
-      <div class="mx-auto max-w-4xl flex items-center justify-center gap-1 flex-wrap text-sm overflow-visible">
+      <div class="mx-auto max-w-4xl flex items-center justify-center gap-1 flex-wrap text-xl overflow-visible">
         <.entity_nav_link
           href={~p"/entities/#{@current_scope.entity.slug}"}
           label="📅 Dashboard"
