@@ -389,7 +389,10 @@ text) create a quick todo. It is **not** a general REST API and adds no new doma
 - **Pairing UI:** sudo-gated, entity-scoped `TugasWeb.ConnectAppLive.Show` at
   `/entities/:entity_slug/connect-app` (live_session `:entity_connect_app`) renders the QR + a
   **Regenerate** button + a **revoke list** of paired tokens. Linked as **📱 Connect app** in the
-  desktop account menu. Audio never reaches the server — the API accepts a text `title` only.
+  desktop account menu. Audio never reaches the server — the API accepts a text `title` only. The QR
+  encodes `TugasWeb.Endpoint.url()` as the host; in dev that defaults to `localhost` (unreachable
+  from a phone), so to pair a physical device over the LAN start the server with
+  `DEV_HOST=<your-lan-ip> mix phx.server` (see the `dev_host` toggle in `config/dev.exs`).
 
 ### Out of scope for v1
 
