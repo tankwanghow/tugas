@@ -10,10 +10,6 @@ defmodule TugasWeb.MobileLive.Dashboard do
     <Layouts.mobile_app flash={@flash} current_scope={@current_scope} nav_context={:calendar}>
       <div class="flex h-[calc(100dvh-4.5rem-env(safe-area-inset-bottom,0px))] min-h-0 flex-col">
         <div class="sticky top-0 z-30 shrink-0 px-4 pt-3 bg-base-100/95 backdrop-blur space-y-1">
-          <h1 class="flex items-center gap-2 text-lg font-semibold truncate">
-            <.brand_logo class="size-9" /> Calendar -
-            <span class="text-base-content/50">{@current_scope.entity.slug}</span>
-          </h1>
           <div id="dashboard-scope-toggle" class="flex items-center justify-between gap-1">
             <button
               id="dashboard-scope-mine"

@@ -16,10 +16,6 @@ defmodule TugasWeb.MobileLive.Todos do
     >
       <div id="m-todos-page" class="p-4" phx-hook="TodoHighlight" data-highlight-id={@highlight_id}>
         <div class="flex items-center justify-between gap-2 mb-3">
-          <div class="flex items-center gap-2 font-semibold text-lg">
-            <.brand_logo class="size-9" /> Todos -
-            <span class="text-base-content/50">{@current_scope.entity.slug}</span>
-          </div>
         </div>
         <ul
           id="m-todos-list"

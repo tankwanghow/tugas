@@ -10,10 +10,6 @@ defmodule TugasWeb.MobileLive.DutyIndex do
     ~H"""
     <Layouts.mobile_app flash={@flash} current_scope={@current_scope} nav_context={:duties}>
       <div class="sticky top-0 z-30 px-4 py-3 bg-base-100/95 backdrop-blur border-b border-base-200 space-y-2">
-        <h1 class="flex items-center gap-2 text-lg font-semibold truncate">
-          <.brand_logo class="size-9" /> Duties -
-          <span class="text-base-content/50">{@current_scope.entity.slug}</span>
-        </h1>
         <div class="flex">
           <div class="w-[65%]">
             <input
