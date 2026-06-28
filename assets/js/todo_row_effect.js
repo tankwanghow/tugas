@@ -125,9 +125,9 @@ export const TodoRowEffect = {
       if (m !== menu) m.style.display = "none"
     })
 
-    menu.style.display = "flex"
+    this.clearMenuListeners()
 
-    this.hideMenu()
+    menu.style.display = "flex"
 
     this.onDocClick = (e) => {
       if (menu.contains(e.target)) return
@@ -141,7 +141,7 @@ export const TodoRowEffect = {
     }, 0)
   },
 
-  hideMenu() {
+  clearMenuListeners() {
     if (this.menuOpenTimer) {
       clearTimeout(this.menuOpenTimer)
       this.menuOpenTimer = null
@@ -152,6 +152,10 @@ export const TodoRowEffect = {
       document.removeEventListener("mousedown", this.onDocClick, true)
       this.onDocClick = null
     }
+  },
+
+  hideMenu() {
+    this.clearMenuListeners()
 
     if (this.el.dataset.menuId) {
       const menu = document.getElementById(this.el.dataset.menuId)
