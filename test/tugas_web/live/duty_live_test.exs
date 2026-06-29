@@ -813,6 +813,41 @@ defmodule TugasWeb.DutyLiveTest do
     assert has_element?(view, "#audit-log", "note")
   end
 
+  test "series sibling links on show page", %{conn: conn} do
+    {scope, duty} = recurring_primary_scope_fixture(interval: "monthly")
+    conn = log_in_user(conn, scope.user)
+
+    assert {:ok, first, second} =
+             Duties.complete(scope, duty, %{note: "Done", next_due_by: ~D[2026-02-15]})
+
+    assert {:ok, middle, third} =
+             Duties.complete(scope, second, %{note: "Done", next_due_by: ~D[2026-03-15]})
+
+    {:ok, view, _html} =
+      live(conn, ~p"/entities/#{scope.entity.slug}/duties/#{middle.id}")
+
+    assert has_element?(view, "#duty-series-nav-previous")
+    assert has_element?(view, "#duty-series-nav-next")
+
+    previous_href = ~p"/entities/#{scope.entity.slug}/duties/#{first.id}"
+    next_href = ~p"/entities/#{scope.entity.slug}/duties/#{third.id}"
+
+    assert render(view) =~ previous_href
+    assert render(view) =~ next_href
+
+    {:ok, first_view, _html} =
+      live(conn, ~p"/entities/#{scope.entity.slug}/duties/#{first.id}")
+
+    refute has_element?(first_view, "#duty-series-nav-previous")
+    assert has_element?(first_view, "#duty-series-nav-next")
+
+    {:ok, last_view, _html} =
+      live(conn, ~p"/entities/#{scope.entity.slug}/duties/#{third.id}")
+
+    assert has_element?(last_view, "#duty-series-nav-previous")
+    refute has_element?(last_view, "#duty-series-nav-next")
+  end
+
   test "complete recurring duty with next due spawns successor", %{conn: conn} do
     {scope, duty} = recurring_primary_scope_fixture(interval: "monthly")
     conn = log_in_user(conn, scope.user)

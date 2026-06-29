@@ -28,6 +28,13 @@ defmodule TugasWeb.MobileLive.DutyShow do
         phx-hook="UploadUiPersist"
         data-duty-id={@duty.id}
       >
+        <.duty_series_nav
+          id="m-duty-series-nav"
+          entity_slug={@current_scope.entity.slug}
+          variant={:mobile}
+          previous={@series_previous}
+          next={@series_next}
+        />
         <section id="duty-summary" class="tugas-workbench tugas-duty-summary">
           <div
             id="duty-meta"
@@ -1018,8 +1025,12 @@ defmodule TugasWeb.MobileLive.DutyShow do
     {slot_rows, _voided} =
       DocumentHelpers.completion_view(cycle_documents(duty), doc_slots)
 
+    %{previous: series_previous, next: series_next} = Duties.series_neighbors(duty)
+
     socket
     |> assign(:duty, duty)
+    |> assign(:series_previous, series_previous)
+    |> assign(:series_next, series_next)
     |> assign(:today, today)
     |> assign(:tier, Urgency.tier(duty.duty_type, duty.due_by, today))
     |> assign(:cycle_status, Index.cycle_status(duty))

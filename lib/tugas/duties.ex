@@ -420,8 +420,47 @@ defmodule Tugas.Duties do
   def list_series(series_id) do
     Duty
     |> where([o], o.series_id == ^series_id)
-    |> order_by([o], asc: o.due_by)
+    |> series_order()
     |> Repo.all()
+  end
+
+  @doc """
+  The immediately adjacent cycles in a recurrence series.
+
+  Ordering matches `list_series/1` (`due_by` ascending, nulls last, then
+  `inserted_at`, then `id`). Returns `%{previous: duty | nil, next: duty | nil}`
+  with minimal `Duty` structs (`id`, `due_by` only).
+  """
+  def series_neighbors(%Duty{series_id: series_id, entity_id: entity_id} = duty) do
+    rows =
+      Duty
+      |> where([o], o.series_id == ^series_id and o.entity_id == ^entity_id)
+      |> series_order()
+      |> select([o], %{id: o.id, due_by: o.due_by})
+      |> Repo.all()
+
+    case Enum.find_index(rows, &(&1.id == duty.id)) do
+      nil ->
+        %{previous: nil, next: nil}
+
+      idx ->
+        %{
+          previous: series_neighbor_at(rows, idx - 1),
+          next: series_neighbor_at(rows, idx + 1)
+        }
+    end
+  end
+
+  defp series_order(query),
+    do: order_by(query, [o], asc_nulls_last: o.due_by, asc: o.inserted_at, asc: o.id)
+
+  defp series_neighbor_at(_rows, index) when index < 0, do: nil
+
+  defp series_neighbor_at(rows, index) do
+    case Enum.at(rows, index) do
+      nil -> nil
+      %{id: id, due_by: due_by} -> %Duty{id: id, due_by: due_by}
+    end
   end
 
   def list_events(%Duty{} = duty) do

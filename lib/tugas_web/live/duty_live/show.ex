@@ -28,6 +28,13 @@ defmodule TugasWeb.DutyLive.Show do
         phx-hook="UploadUiPersist"
         data-duty-id={@duty.id}
       >
+        <.duty_series_nav
+          id="duty-series-nav"
+          entity_slug={@current_scope.entity.slug}
+          variant={:desktop}
+          previous={@series_previous}
+          next={@series_next}
+        />
         <section
           id="duty-summary"
           class="tugas-workbench w-[100%] mx-auto tugas-duty-summary"
@@ -1030,8 +1037,12 @@ defmodule TugasWeb.DutyLive.Show do
 
     scope = socket.assigns.current_scope
 
+    %{previous: series_previous, next: series_next} = Duties.series_neighbors(duty)
+
     socket
     |> assign(:duty, duty)
+    |> assign(:series_previous, series_previous)
+    |> assign(:series_next, series_next)
     |> assign(:doc_slots, doc_slots)
     |> assign(:required_docs, slot_rows)
     |> assign(:docs_complete?, Enum.all?(slot_rows, fn {_slot, live} -> live end))

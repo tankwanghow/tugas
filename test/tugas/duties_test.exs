@@ -1260,4 +1260,31 @@ defmodule Tugas.DutiesTest do
       assert %{primary: 1, collaborations: 0} = counts[member.user.id]
     end
   end
+
+  describe "series_neighbors/1" do
+    test "returns nil neighbors for a standalone cycle" do
+      {_scope, duty} = manager_duty_scope_fixture()
+      assert %{previous: nil, next: nil} = Duties.series_neighbors(duty)
+    end
+
+    test "returns adjacent cycles ordered by due date" do
+      {scope, duty} = recurring_primary_scope_fixture(interval: "monthly")
+
+      assert {:ok, first, second} =
+               Duties.complete(scope, duty, %{note: "Done", next_due_by: ~D[2026-02-15]})
+
+      assert {:ok, middle, third} =
+               Duties.complete(scope, second, %{note: "Done", next_due_by: ~D[2026-03-15]})
+
+      assert %{previous: nil, next: %{id: second_id}} = Duties.series_neighbors(first)
+      assert second_id == second.id
+
+      assert %{previous: %{id: first_id}, next: %{id: third_id}} = Duties.series_neighbors(middle)
+      assert first_id == first.id
+      assert third_id == third.id
+
+      assert %{previous: %{id: middle_id}, next: nil} = Duties.series_neighbors(third)
+      assert middle_id == middle.id
+    end
+  end
 end
