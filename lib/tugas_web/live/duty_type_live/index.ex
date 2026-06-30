@@ -122,6 +122,9 @@ defmodule TugasWeb.DutyTypeLive.Index do
         <span :if={@type.complete_documents not in [nil, ""]}>
           · docs: {@type.complete_documents}
         </span>
+        <span :if={@type.reminder_offsets not in [nil, ""]}>
+          · reminders: {@type.reminder_offsets} days before due
+        </span>
       </div>
     </div>
     """

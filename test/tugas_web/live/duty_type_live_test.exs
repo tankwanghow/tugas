@@ -63,6 +63,43 @@ defmodule TugasWeb.DutyTypeLiveTest do
     assert has_element?(view, "#types", "EPF Monthly (copy)")
   end
 
+  test "index row shows reminder offsets (days before due)", %{conn: conn} do
+    manager = Tugas.EntitiesFixtures.manager_scope_fixture()
+    conn = log_in_user(conn, manager.user)
+
+    {:ok, type} =
+      Tugas.Duties.create_type(manager, %{
+        "name" => "VAT Filing",
+        "recurring_interval" => "monthly",
+        "reminder_offsets" => "30, 7, 1"
+      })
+
+    # normalized canonical form: deduped, sorted ascending, no spaces.
+    assert type.reminder_offsets == "1,7,30"
+
+    {:ok, view, _html} = live(conn, ~p"/entities/#{manager.entity.slug}/duty-types")
+
+    row = render(element(view, "#type-#{type.id}"))
+    assert row =~ "1,7,30"
+    assert row =~ "days before due"
+  end
+
+  test "index row omits reminder offsets when none are set", %{conn: conn} do
+    manager = Tugas.EntitiesFixtures.manager_scope_fixture()
+    conn = log_in_user(conn, manager.user)
+
+    {:ok, type} =
+      Tugas.Duties.create_type(manager, %{
+        "name" => "Ad-hoc Task",
+        "recurring_interval" => "none",
+        "reminder_offsets" => ""
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/entities/#{manager.entity.slug}/duty-types")
+
+    refute render(element(view, "#type-#{type.id}")) =~ "days before due"
+  end
+
   test "member cannot see management actions", %{conn: conn} do
     member = member_scope_on_entity(Tugas.EntitiesFixtures.manager_scope_fixture().entity)
     conn = log_in_user(conn, member.user)
