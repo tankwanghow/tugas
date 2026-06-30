@@ -33,6 +33,10 @@ defmodule TugasWeb.Layouts do
 
   attr :container_class, :string, default: "max-w-4xl"
 
+  attr :full_height, :boolean,
+    default: false,
+    doc: "fill the viewport (no page scroll); content scrolls internally"
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -41,7 +45,10 @@ defmodule TugasWeb.Layouts do
       id="tugas-shell"
       phx-window-keydown="close_modal_on_escape"
       phx-key="Escape"
-      class="tugas-app min-h-screen flex flex-col"
+      class={[
+        "tugas-app flex flex-col",
+        if(@full_height, do: "h-screen overflow-hidden", else: "min-h-screen")
+      ]}
     >
       <.doc_preview_modal />
       <header class="navbar px-4 sm:px-6 lg:px-8 border-b border-base-300">
@@ -95,8 +102,15 @@ defmodule TugasWeb.Layouts do
 
       <.entity_nav :if={entity_scope?(@current_scope)} current_scope={@current_scope} />
 
-      <main class="flex-1 px-4 py-5 sm:px-6 lg:px-8">
-        <div class={["mx-auto space-y-3", @container_class]}>
+      <main class={[
+        "flex-1 px-4 sm:px-6 lg:px-8",
+        if(@full_height, do: "min-h-0 overflow-hidden py-3", else: "py-5")
+      ]}>
+        <div class={[
+          "mx-auto",
+          if(@full_height, do: "h-full min-h-0", else: "space-y-3"),
+          @container_class
+        ]}>
           {render_slot(@inner_block)}
         </div>
       </main>

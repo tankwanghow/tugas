@@ -492,7 +492,7 @@ defmodule TugasWeb.DutyCalendar do
   defp calendar_root_class(false), do: "flex h-full min-h-0 flex-col gap-4"
 
   defp calendar_grid_wrapper_class(true), do: "min-h-0 flex-1"
-  defp calendar_grid_wrapper_class(false), do: "min-h-[32rem] flex-1"
+  defp calendar_grid_wrapper_class(false), do: "min-h-0 flex-1"
 
   defp cell_class(_mobile?), do: "h-full min-h-0"
 

@@ -9,9 +9,14 @@ defmodule TugasWeb.DashboardLive.Index do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash} current_scope={@current_scope} container_class="max-w-7xl">
-      <div id="dashboard" class="tugas-page space-y-4">
-        <div class="flex flex-wrap items-center justify-center gap-2">
+    <Layouts.app
+      flash={@flash}
+      current_scope={@current_scope}
+      container_class="max-w-7xl"
+      full_height
+    >
+      <div id="dashboard" class="flex h-full min-h-0 flex-col gap-3">
+        <div class="flex shrink-0 flex-wrap items-center justify-center gap-2">
           <div class="flex items-center gap-1">
             <button
               id="dashboard-prev-month"
@@ -179,16 +184,20 @@ defmodule TugasWeb.DashboardLive.Index do
   end
 
   # Collapsing Urgent (left) / Todos (right) shrinks that column to a thin rail so
-  # the calendar (the 1fr middle column) expands to take the freed width.
+  # the calendar (the 1fr middle column) expands to take the freed width. The grid
+  # is flex-1/min-h-0 so the whole dashboard fills the viewport and only the inner
+  # lists scroll (the page itself never scrolls).
+  @grid_base "grid min-h-0 flex-1 grid-cols-1 gap-2"
+
   defp grid_cols_class(%{urgent: true, todos: true}),
-    do: "grid grid-cols-1 gap-2 lg:grid-cols-[2.5rem_minmax(0,1fr)_2.5rem]"
+    do: "#{@grid_base} lg:grid-cols-[2.5rem_minmax(0,1fr)_2.5rem]"
 
   defp grid_cols_class(%{urgent: true}),
-    do: "grid grid-cols-1 gap-2 lg:grid-cols-[2.5rem_minmax(0,1fr)_15%]"
+    do: "#{@grid_base} lg:grid-cols-[2.5rem_minmax(0,1fr)_15%]"
 
   defp grid_cols_class(%{todos: true}),
-    do: "grid grid-cols-1 gap-2 lg:grid-cols-[15%_minmax(0,1fr)_2.5rem]"
+    do: "#{@grid_base} lg:grid-cols-[15%_minmax(0,1fr)_2.5rem]"
 
   defp grid_cols_class(_),
-    do: "grid grid-cols-1 gap-2 lg:grid-cols-[15%_minmax(0,1fr)_15%]"
+    do: "#{@grid_base} lg:grid-cols-[15%_minmax(0,1fr)_15%]"
 end
